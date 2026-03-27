@@ -14,7 +14,9 @@ The assistant runs daily via Claude Code's `/loop` feature, presenting a formatt
 
 **Approach:** Hybrid — prompts as the core orchestration layer, backed by utility scripts for deterministic work (session log parsing, git history extraction, template management). All prompts and scripts are independently invocable as ad-hoc skills or slash commands.
 
-**Runtime:** Claude Code CLI with ADO MCP, Notion MCP, and `gh` CLI as the integration layer. No standalone application code.
+**Runtime:** Claude Code CLI with `az devops` CLI (primary ADO interface), Notion MCP, and `gh` CLI as the integration layer. ADO MCP retained as fallback for edge cases the CLI doesn't cover. No standalone application code.
+
+**Why `az devops` CLI over ADO MCP:** The CLI is dramatically more token-efficient — commands return focused output via `--query` (JMESPath) and `--output tsv/table`, avoiding the verbose JSON round-trips of MCP. It also pipes naturally into scripts.
 
 ## Repository Structure
 
@@ -79,15 +81,15 @@ AdoTaskAssistant/
 
 ### Daily Automated Flow (via `/loop`)
 
-1. **Detect Sprint** — Query ADO for current active iteration, compare with last run. If changed, alert and confirm with user.
+1. **Detect Sprint** — Query ADO via `az boards iteration team list` for current active iteration, compare with last run. If changed, alert and confirm with user.
 2. **Gather Activity** (since last run):
    - GitHub: PRs authored/reviewed via `gh` CLI, filtered by configured org
    - Notion: Pages owned or substantially edited via Notion MCP
    - Claude Sessions: Parsed from local session logs
    - Git Commits: Extracted across configured repos
-3. **Match & Deduplicate** — Cross-reference activity against existing ADO tasks. Classify each: CREATE / UPDATE / CLOSE / SKIP.
+3. **Match & Deduplicate** — Cross-reference activity against existing ADO tasks via `az boards work-item query`. Classify each: CREATE / UPDATE / CLOSE / SKIP.
 4. **Propose Changes** — Present grouped by source (GitHub | Notion | Claude/Git). Moderate detail by default, expandable per item. Individual item-level approval control.
-5. **Apply** — Execute approved changes via ADO MCP using the task template. Write results to sprint updates folder.
+5. **Apply** — Execute approved changes via `az boards work-item create/update` using the task template. Write results to sprint updates folder. Fall back to ADO MCP for operations not supported by the CLI.
 6. **Persist** — Save activity snapshot, update last-run.json.
 
 ### Ad-hoc Date Range Scan
@@ -107,11 +109,22 @@ User provides a description, Claude creates the work item using the template. Su
 
 A sequential guided wizard — each step flows into the next automatically. User answers prompts as they come, no manual step triggering.
 
-1. **Prerequisites Check** — Verify `gh` CLI, Notion MCP, ADO MCP are connected. Report missing pieces with fix instructions.
-2. **User Configuration** — Prompt for: GitHub org(s), Notion scope, git repos to scan (auto-detect option), daily run time. Save to `data/config.json`.
-3. **Template Generation** — Prompt for reference ADO task/PBI URL. Parse via ADO MCP, extract relevant properties (area path, sprint pattern, fields, format). Filter out instance-specific data (attachments, comments). Present template for review. Save to `data/task-template.json`.
-4. **First Run (optional)** — Offer an immediate scan with a user-chosen date range. Creates the first sprint folder.
-5. **Schedule** — Set up the `/loop` schedule for daily runs. Confirm readiness.
+1. **Prerequisites Check** — Verify the following, reporting missing pieces with step-by-step fix instructions:
+   - `gh` CLI — authenticated (`gh auth status`)
+   - Notion MCP — connected
+   - `az` CLI — installed (`az version`)
+   - `azure-devops` extension — installed (`az extension list`)
+   - ADO MCP — connected (retained as fallback)
+2. **Azure DevOps Authentication** — Guide the user through persistent PAT-based auth:
+   - Prompt user to create a PAT in ADO (provide direct URL: `https://dev.azure.com/<org>/_usersettings/tokens`)
+   - Required PAT scopes: Work Items (Read/Write), Project and Team (Read), Build (Read)
+   - Instruct user to set `AZURE_DEVOPS_EXT_PAT` in their shell profile (e.g., `.bashrc`, `.zshrc`, or Windows environment variables) for persistence across sessions and unattended `/loop` runs
+   - Verify auth works: `az devops login` and test with `az boards work-item show --id <test-id>`
+   - Configure defaults: `az devops configure --defaults organization=<org-url> project=<project-name>`
+3. **User Configuration** — Prompt for: GitHub org(s), Notion scope, git repos to scan (auto-detect option), daily run time. Save to `data/config.json`.
+4. **Template Generation** — Prompt for reference ADO task/PBI URL. Parse via `az boards work-item show`, extract relevant properties (area path, sprint pattern, fields, format). Filter out instance-specific data. Present template for review. Save to `data/task-template.json`.
+5. **First Run (optional)** — Offer an immediate scan with a user-chosen date range. Creates the first sprint folder.
+6. **Schedule** — Set up the `/loop` schedule for daily runs. Confirm readiness.
 
 ## Skills (Slash Commands)
 
@@ -145,6 +158,7 @@ A sequential guided wizard — each step flows into the next automatically. User
 | `parse-session-logs.sh` | Extract Claude Code session activity for a date range |
 | `extract-git-activity.sh` | Extract commits across configured repos for a date range |
 | `template-manager.sh` | Read/update/validate the task template |
+| `ado-cli.sh` | Wrapper around `az boards` commands — create/update/query work items with token-efficient output formatting |
 
 ## Configuration
 
@@ -166,8 +180,11 @@ A sequential guided wizard — each step flows into the next automatically. User
     "auto_detect_from": "C:/src"
   },
   "ado": {
+    "organization": null,
     "project": null,
-    "default_work_item_type": "Product Backlog Item"
+    "default_work_item_type": "Product Backlog Item",
+    "use_cli": true,
+    "fallback_to_mcp": true
   },
   "schedule": {
     "daily_time": "09:00",
@@ -230,6 +247,20 @@ Area Path: Project\Team\Area
 
 - Claude Code CLI
 - `gh` CLI — authenticated
-- ADO MCP server — connected and configured
+- Azure CLI (`az`) with `azure-devops` extension — primary ADO interface
+- `AZURE_DEVOPS_EXT_PAT` environment variable — set in shell profile for persistent, non-interactive auth (PAT scopes: Work Items R/W, Project and Team R, Build R)
+- `az devops configure --defaults` — org and project configured
 - Notion MCP server — connected and configured
+- ADO MCP server — connected (fallback for edge cases)
 - Access to ADO project with permissions to create/update work items
+
+### Authentication Strategy
+
+The `az devops` CLI supports two auth methods. **PAT via environment variable is required** for this project:
+
+| Method | Persistence | Unattended `/loop` | Setup |
+|--------|------------|-------------------|-------|
+| `az login` (browser) | Token cache, expires in hours | No — requires interactive re-auth | `az login` |
+| **`AZURE_DEVOPS_EXT_PAT` (recommended)** | **Until PAT expiry (up to 1 year)** | **Yes** | **Set env var in shell profile** |
+
+The PAT is set once in the user's shell profile (`.bashrc`, `.zshrc`, or Windows environment variables) and works across all Claude Code sessions, including unattended `/loop` runs. The `/ado-tracker-init` wizard guides users through PAT creation and setup.
