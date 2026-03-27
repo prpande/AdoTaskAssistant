@@ -119,12 +119,15 @@ A sequential guided wizard — each step flows into the next automatically. User
    - Prompt user to create a PAT in ADO (provide direct URL: `https://dev.azure.com/<org>/_usersettings/tokens`)
    - Required PAT scopes: Work Items (Read/Write), Project and Team (Read), Build (Read)
    - Instruct user to set `AZURE_DEVOPS_EXT_PAT` in their shell profile (e.g., `.bashrc`, `.zshrc`, or Windows environment variables) for persistence across sessions and unattended `/loop` runs
-   - Verify auth works: `az devops login` and test with `az boards work-item show --id <test-id>`
    - Configure defaults: `az devops configure --defaults organization=<org-url> project=<project-name>`
-3. **User Configuration** — Prompt for: GitHub org(s), Notion scope, git repos to scan (auto-detect option), daily run time. Save to `data/config.json`.
-4. **Template Generation** — Prompt for reference ADO task/PBI URL. Parse via `az boards work-item show`, extract relevant properties (area path, sprint pattern, fields, format). Filter out instance-specific data. Present template for review. Save to `data/task-template.json`.
-5. **First Run (optional)** — Offer an immediate scan with a user-chosen date range. Creates the first sprint folder.
-6. **Schedule** — Set up the `/loop` schedule for daily runs. Confirm readiness.
+3. **Reference Task & Auth Validation** — Prompt the user for a reference ADO work item URL/ID. Immediately attempt to fetch it via `az boards work-item show --id <id>`. This serves as both:
+   - **Auth validation** — confirms PAT, org, and project are configured correctly
+   - **Template source** — the fetched work item becomes the basis for template generation
+   - If the fetch fails, parse the error message and guide the user to fix the specific issue (e.g., expired PAT, wrong org, missing permissions, network issues). Re-attempt after each fix until successful.
+4. **Template Generation** — Using the successfully fetched reference work item, extract relevant properties (area path, sprint pattern, fields, format). Filter out instance-specific data. Present template for review. Save to `data/task-template.json`.
+5. **User Configuration** — Prompt for: GitHub org(s), Notion scope, git repos to scan (auto-detect option), daily run time. Save to `data/config.json`.
+6. **First Run (optional)** — Offer an immediate scan with a user-chosen date range. Creates the first sprint folder.
+7. **Schedule** — Set up the `/loop` schedule for daily runs. Confirm readiness.
 
 ## Skills (Slash Commands)
 
