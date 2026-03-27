@@ -1,0 +1,32 @@
+{
+  "github": {
+    "orgs": ["your-org-name"],
+    "exclude_repos": [],
+    "username": null
+  },
+  "notion": {
+    "scope": "all",
+    "exclude_databases": [],
+    "track_ownership": true,
+    "track_edits": true
+  },
+  "git": {
+    "repos": [],
+    "auto_detect_from": "C:/src"
+  },
+  "ado": {
+    "organization": null,
+    "project": null,
+    "default_work_item_type": "Product Backlog Item",
+    "use_cli": true,
+    "fallback_to_mcp": true
+  },
+  "schedule": {
+    "daily_time": "09:00",
+    "loop_interval": "24h"
+  },
+  "session_logs": {
+    "enabled": true,
+    "path": null
+  }
+}
