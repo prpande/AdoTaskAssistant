@@ -78,6 +78,10 @@ Guide the user through PAT-based persistent auth:
    - **Other error**: Show the full error message. "Please check the error above and let me know when you've fixed it."
    - After each fix: re-attempt the fetch. Repeat until successful.
 5. On **success**: "Successfully fetched work item #<id>: '<title>'. Auth is working correctly."
+6. **Validate work item type**: Check `System.WorkItemType` in the response.
+   - If it is not `"Product Backlog Item"`, warn: "This work item is a <type>, not a PBI. PBIs are recommended as reference items. Continue anyway?"
+   - Wait for confirmation before proceeding.
+7. **Extract ADO email**: Read `System.AssignedTo.uniqueName` from the work item fields and store it as `user.ado_email` for use in config.
 
 ## Step 4: Template Generation
 
@@ -94,6 +98,30 @@ Guide the user through PAT-based persistent auth:
 
 ## Step 5: User Configuration
 
+### Auto-detect User Identities
+
+Before configuring data sources, detect the user's identity across tools:
+
+1. **GitHub username** (already authenticated from Step 1):
+   ```bash
+   gh api user --jq .login
+   ```
+   Present: "Detected GitHub username: `<username>`. Correct?"
+   If wrong, ask for the correct username.
+
+2. **Notion user ID** — Search by the user's name or email:
+   ```
+   Use Notion MCP `notion-get-users` with query matching the user's name or ADO email.
+   ```
+   Present: "Found Notion account: `<name>` (`<email>`). Correct?"
+   If not found, ask the user for their Notion email and retry. If still not found, skip (Notion scanning will use broader search).
+
+3. **ADO email**: Already extracted from the reference work item in Step 3.
+
+Save all detected identities. These will be written to the `user` section of `config.json` in the configuration step.
+
+### Data Source Configuration
+
 Prompt for each setting sequentially:
 
 1. "Which GitHub organization(s) should I track? (comma-separated, e.g., `mindbodyonline`)"
@@ -104,7 +132,30 @@ Prompt for each setting sequentially:
    - Offer auto-detect: "I can auto-detect repos under a parent directory. What's your source code root? (e.g., `C:/src`) Or provide specific paths."
 5. "What time should the daily scan run? (HH:MM, 24h format, default: 09:00)"
 
-Build `data/config.json` from the answers and save it. Present a summary for confirmation.
+Build `data/config.json` from the answers and save it. Use this structure:
+
+```json
+{
+  "ado": { "...": "..." },
+  "user": {
+    "ado_email": "<extracted from reference task>",
+    "github_username": "<auto-detected>",
+    "notion_user_id": "<auto-detected>"
+  },
+  "github": { "...": "..." },
+  "notion": {
+    "scope": "...",
+    "excluded_databases": [],
+    "filter_types": ["page"]
+  },
+  "git": { "...": "..." },
+  "schedule": {
+    "daily_scan_time": "<HH:MM>"
+  }
+}
+```
+
+Present a summary for confirmation.
 
 ## Step 6: First Run (Optional)
 
