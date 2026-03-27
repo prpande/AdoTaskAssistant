@@ -7,7 +7,7 @@ This workspace is an ADO task tracking assistant operated via Claude Code CLI. I
 - **Prompts** (`prompts/`): Single-purpose reusable tasks, invokable individually
 - **Automations** (`automations/`): Multi-step orchestrated workflows that call prompts in sequence
 - **Scripts** (`scripts/`): Bash utilities for deterministic work — always call via `bash scripts/<name>.sh`
-- **Skills** (`skills/`): Slash command definitions for Claude Code
+- **Skills** (`.claude/skills/`): Slash command definitions for Claude Code (each in its own directory as `SKILL.md`)
 - **Data** (`data/`): Gitignored runtime data — config, template, sprint activity/updates
 
 ## Tools
