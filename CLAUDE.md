@@ -1,7 +1,7 @@
 # ADO Tracker
 
 ## Identity
-This workspace is an ADO task tracking assistant operated via Claude Code CLI. It tracks user activity across GitHub, Notion, Claude Code sessions, and git commits — then proposes and manages ADO work items (PBIs and Tasks).
+This workspace is an ADO task tracking assistant operated via Claude Code CLI. It tracks user activity across GitHub, Notion, and git commits — then proposes and manages ADO work items (PBIs and Tasks).
 
 ## Architecture
 - **Prompts** (`prompts/`): Single-purpose reusable tasks, invokable individually
@@ -12,18 +12,62 @@ This workspace is an ADO task tracking assistant operated via Claude Code CLI. I
 
 ## Tools
 - **ADO operations (primary):** `bash scripts/ado-cli.sh --action <action> --params '<json>'`
+  - Actions: `show-work-item`, `create-work-item`, `update-work-item`, `query-work-items`, `current-sprint`, `list-sprints`, `add-child`, `close-work-item`, `create-task`, `create-with-children`, `resolve-sprints-for-range`, `query-my-sprint-items`
+  - Config-aware: reads `data/config.json` for org/project/team/email defaults
+  - `create-work-item` supports `assigned_to` and `state` params
+  - `create-with-children` creates a PBI + all child tasks + links in one call
+  - `create-task` creates a task and links to parent in one call
+  - `resolve-sprints-for-range` returns all sprints overlapping a date range
+  - `query-my-sprint-items` queries user's items across multiple sprints (for dedup)
 - **Template operations:** `bash scripts/template-manager.sh --action <action> --params '<json>'`
-- **Git activity:** `bash scripts/extract-git-activity.sh --from <date> --to <date> --repos '<json-array>'`
-- **Session logs:** `bash scripts/parse-session-logs.sh --from <date> --to <date>`
-- **GitHub:** Use `gh` CLI directly (e.g., `gh pr list`, `gh search prs`)
+- **Git activity:** `bash scripts/extract-git-activity.sh --from <date> --to <date> --auto-detect <dir> --filter-org <org>`
+- **Session logs:** `bash scripts/parse-session-logs.sh --from <date> --to <date>` (best-effort)
+- **GitHub:** Use `gh` CLI directly
 - **Notion:** Use Notion MCP tools directly
 - **ADO fallback:** Use ADO MCP tools only when `az devops` CLI cannot handle an operation
 
 ## Configuration
-- Read `data/config.json` for user settings (GitHub orgs, Notion scope, repos, schedule)
-- Read `data/task-template.json` for the PBI/Task creation template
-- Read `data/last-run.json` for last run timestamp and sprint info
+- `data/config.json` — user settings:
+  - `ado`: organization, project, team
+  - `user`: ado_email, github_username, notion_user_id (auto-detected during init)
+  - `github`: organizations, excluded_repos
+  - `notion`: scope, excluded_databases, filter_types (default: ["page"])
+  - `git`: source_root, auto_detect, filter_by_remote_org, explicit_repos
+  - `schedule`: daily_scan_time
+- `data/task-template.json` — PBI/Task creation template (title_prefix_pbi, description_format, fields)
+- `data/last-run.json` — last daily scan timestamp, sprint, counts, date range
 - If any data file is missing, guide the user to run `/ado-tracker-init`
+
+## Sprint Management
+- **Multi-sprint aware**: Scans resolve all sprints overlapping the date range, not just "current"
+- `resolve-sprints-for-range` replaces `current-sprint` for scans
+- Activity items are mapped to sprints by their date
+- Sprint boundaries are handled: items at start/end of sprint go to the correct sprint
+
+## Deduplication
+- Before proposing, query existing items across all overlapping sprints
+- Match by source URL in description (PR links, Notion links)
+- Match by title keyword overlap
+- Prevents duplicate PBIs from overlapping scan date ranges
+
+## State Lifecycle
+State is set during creation and updated automatically based on source type:
+
+| Source | Created State | Auto-close? |
+|--------|--------------|-------------|
+| GitHub PR (open) | In Progress | Yes — when PR merges |
+| GitHub PR (merged) | Done | N/A |
+| Notion page | In Progress | **Never** — user decides |
+| Git commits (no PR) | In Progress | Never |
+
+All items are always assigned to `user.ado_email`.
+
+## Proposal Format
+When presenting proposed ADO changes:
+- Group by sprint, then by action type (new items, state updates, already tracked)
+- Show moderate detail by default
+- Allow expand/edit/approve per item or group
+- Always show what was skipped and why
 
 ## Data Organization
 All runtime data lives in `data/` (gitignored), organized by sprint:
@@ -31,18 +75,10 @@ All runtime data lives in `data/` (gitignored), organized by sprint:
 data/sprints/<Sprint-Name>/activity/<date>-<type>.json
 data/sprints/<Sprint-Name>/updates/<date>-<type>.json
 ```
-- Daily runs: `2026-03-27-daily.json`
-- Ad-hoc runs: `2026-03-25-to-03-27-adhoc.json`
-
-## Sprint Management
-- Detect current sprint: `bash scripts/ado-cli.sh --action current-sprint`
-- Always confirm sprint with the user before applying any updates
-- Alert the user when the sprint has changed since the last run
-
-## Proposal Format
-When presenting proposed ADO changes, group by source (GitHub PRs | Notion Pages | Claude Sessions / Git). Show moderate detail by default (title, source, area path, sprint, one-line summary). Allow the user to expand individual items to full preview. Allow individual item or group-level approval/rejection.
 
 ## Error Handling
 - If `az devops` commands fail, show the error and suggest fixes
 - If a prerequisite is missing, guide the user to `/ado-tracker-init`
 - Never silently skip failures — always inform the user
+- Gathering step failures don't block the pipeline — continue with what succeeded
+- Session log parsing is best-effort and never blocks
