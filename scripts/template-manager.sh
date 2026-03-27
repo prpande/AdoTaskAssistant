@@ -26,7 +26,7 @@ TEMPLATE_FILE="$DATA_DIR/task-template.json"
 # --- Helpers ---
 
 json_ok() {
-    jq -n --argjson data "$1" '{"success":true,"data":$data}'
+    printf '%s' "$1" | jq '{success: true, data: .}'
 }
 
 json_error() {
@@ -72,8 +72,8 @@ read_template() {
 write_template() {
     ensure_data_dir
     local template
-    template=$(echo "$PARAMS" | jq '.template // .')
-    echo "$template" | jq '.' > "$TEMPLATE_FILE" || {
+    template=$(printf '%s' "$PARAMS" | jq '.template // .')
+    printf '%s' "$template" | jq '.' > "$TEMPLATE_FILE" || {
         json_error "Failed to write template" "$ACTION"
         exit 1
     }
@@ -86,12 +86,12 @@ update_template() {
         exit 1
     fi
     local updates
-    updates=$(echo "$PARAMS" | jq '.updates // .')
+    updates=$(printf '%s' "$PARAMS" | jq '.updates // .')
     local current
     current=$(cat "$TEMPLATE_FILE")
     local merged
-    merged=$(echo "$current" "$updates" | jq -s '.[0] * .[1]')
-    echo "$merged" | jq '.' > "$TEMPLATE_FILE" || {
+    merged=$(printf '%s\n%s' "$current" "$updates" | jq -s '.[0] * .[1]')
+    printf '%s' "$merged" | jq '.' > "$TEMPLATE_FILE" || {
         json_error "Failed to update template" "$ACTION"
         exit 1
     }
@@ -107,11 +107,11 @@ validate_template() {
     local template
     template=$(cat "$TEMPLATE_FILE")
 
-    local required_fields=("work_item_type" "area_path" "iteration_path_pattern")
+    local required_fields=("work_item_type" "area_path" "iteration_path_pattern" "title_prefix_pbi" "description_format")
     local missing=()
     for field in "${required_fields[@]}"; do
         local value
-        value=$(echo "$template" | jq -r ".$field // empty")
+        value=$(printf '%s' "$template" | jq -r ".$field // empty")
         if [[ -z "$value" ]]; then
             missing+=("$field")
         fi
@@ -129,7 +129,7 @@ validate_template() {
 
 extract_template() {
     local work_item
-    work_item=$(echo "$PARAMS" | jq '.work_item')
+    work_item=$(printf '%s' "$PARAMS" | jq '.work_item')
 
     if [[ "$work_item" == "null" ]]; then
         json_error "Missing required parameter: work_item (the raw work item JSON)" "$ACTION"
@@ -138,7 +138,7 @@ extract_template() {
 
     # Extract reusable fields, filter out instance-specific data
     local template
-    template=$(echo "$work_item" | jq '{
+    template=$(printf '%s' "$work_item" | jq '{
         source_work_item_id: .id,
         work_item_type: .fields["System.WorkItemType"],
         area_path: .fields["System.AreaPath"],
@@ -146,7 +146,7 @@ extract_template() {
             .fields["System.IterationPath"]
             | if . then
                 # Replace the last numeric segment with {number} placeholder
-                (split("\\") | last | gsub("[0-9]+"; "{number}")) as $last_part |
+                (split("\\") | last | gsub("[0-9]{4}"; "{year}") | gsub("{year}-[0-9]+"; "{year}-{sprint_number}")) as $last_part |
                 (split("\\") | .[:-1] + [$last_part] | join("\\"))
               else null end
         ),
