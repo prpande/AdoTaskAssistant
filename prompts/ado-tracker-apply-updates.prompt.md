@@ -1,96 +1,70 @@
 # Apply ADO Updates
 
 ## Goal
-Execute the user-approved ADO changes — create, update, or close work items.
+Execute user-approved ADO changes — create PBIs with children, update states, close items.
 
 ## Context
 - ADO CLI: `bash scripts/ado-cli.sh`
-- Template: `data/task-template.json`
-- Input: JSON array of approved actions from the propose step
+- Config: `data/config.json` — read `user.ado_email`
 
 ## Input
-- `approved_actions`: JSON array of approved changes (from propose-updates prompt)
-- `sprint_folder`: Path to the current sprint's updates folder
+- `approved_actions`: JSON array from propose-updates
+- `sprint_folder`: Path for saving results
 
 ## Instructions
 
-1. For each approved action, execute the corresponding ADO CLI command:
+1. For each approved action, execute:
 
-   **CREATE:**
+   **create** — Use `create-with-children` for PBIs with tasks:
    ```bash
-   bash scripts/ado-cli.sh --action create-work-item --params '{
-     "type": "<work_item_type>",
-     "title": "<title>",
-     "area_path": "<area_path>",
-     "iteration_path": "<iteration_path>",
-     "description": "<description>",
-     "fields": {<additional-fields>}
+   bash scripts/ado-cli.sh --action create-with-children --params '{
+     "pbi": {"type": "Product Backlog Item", "title": "...", "area_path": "...", "iteration_path": "...", "description": "...", "assigned_to": "...", "state": "...", "fields": {...}},
+     "tasks": [{"title": "...", "description": "...", "state": "...", "assigned_to": "..."}]
    }'
    ```
 
-   **UPDATE:**
+   **create-task** — For adding tasks to existing PBIs:
    ```bash
-   bash scripts/ado-cli.sh --action update-work-item --params '{
-     "id": <existing-id>,
-     "fields": {<fields-to-update>}
-   }'
+   bash scripts/ado-cli.sh --action create-task --params '{"title": "...", "parent_id": <id>, "description": "...", "state": "...", "assigned_to": "..."}'
    ```
 
-   **CLOSE:**
+   **update-state** — For changing work item state:
    ```bash
-   bash scripts/ado-cli.sh --action close-work-item --params '{"id": <existing-id>}'
+   bash scripts/ado-cli.sh --action update-work-item --params '{"id": <id>, "state": "<new_state>"}'
    ```
 
-   **ADD CHILD (for tasks under PBIs):**
-   ```bash
-   # First create the child task
-   bash scripts/ado-cli.sh --action create-work-item --params '{
-     "type": "Task",
-     "title": "<title>",
-     "area_path": "<area_path>",
-     "iteration_path": "<iteration_path>"
-   }'
-   # Then link it as a child
-   bash scripts/ado-cli.sh --action add-child --params '{"parent_id": <pbi-id>, "child_id": <new-task-id>}'
+2. Always embed source URLs in descriptions. Use the template's `description_format`:
+   ```
+   ## Summary
+   <summary>
+
+   ## Source
+   <PR links, Notion links, commit refs>
+
+   ## Date
+   <activity date range>
    ```
 
-2. Track results for each action:
-   - On success: record the work item ID, URL, and action taken
-   - On failure: record the error, do NOT retry automatically. Show the error to the user and ask if they want to retry or skip.
+3. Track results for each action:
+   - Success: record work item ID, URL, action
+   - Failure: record error, show to user, ask retry or skip
 
-3. Save results to the sprint updates folder:
-   ```
-   data/sprints/<Sprint-Name>/updates/<date>-<type>.json
-   ```
-   Format:
+4. Save results to sprint folder:
    ```json
    {
-     "run_type": "daily",
+     "run_type": "daily|adhoc",
      "date": "2026-03-27",
-     "sprint": "Sprint-42",
-     "proposed": [...],
-     "accepted": [...],
-     "applied": [
-       {
-         "action": "create",
-         "work_item_id": 12345,
-         "title": "Add retry logic to payment webhook",
-         "url": "https://dev.azure.com/...",
-         "status": "success"
-       }
-     ],
+     "sprints": ["Sprint 2026-07"],
+     "applied": [{"action": "create", "pbi_id": 12345, "task_ids": [12346], "status": "success"}],
      "errors": []
    }
    ```
 
-4. Present a summary to the user:
+5. Present summary:
    ```
    ## Applied Changes
-   ✓ Created PBI #12345: "Add retry logic to payment webhook"
-   ✓ Updated PBI #5678: Added PR link
-   ✗ Failed to create PBI "Q2 onboarding flow redesign" — error: <message>
-
-   Results saved to data/sprints/Sprint-42/updates/2026-03-27-daily.json
+   Created PBI #12345: "Title" (Committed) — 3 tasks
+   Updated Task #12346 → Done
    ```
 
 ## Output

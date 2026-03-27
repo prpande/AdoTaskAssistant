@@ -1,60 +1,52 @@
 # Create PBI
 
 ## Goal
-Create a new Product Backlog Item in ADO from a user-provided description, using the saved template.
+Create a new Product Backlog Item in ADO using the saved template.
 
 ## Context
 - ADO CLI: `bash scripts/ado-cli.sh`
 - Template: `bash scripts/template-manager.sh --action read`
-- Sprint: `bash scripts/ado-cli.sh --action current-sprint`
+- Config: `data/config.json`
 
 ## Input
-The user provides a description of the work item. This can be a single sentence or a detailed description.
+The user provides a description of the work item.
 
 ## Instructions
 
-1. Read the template:
-   ```bash
-   bash scripts/template-manager.sh --action read
-   ```
-   If template is missing, tell the user to run `/ado-tracker-init` first.
+1. Read template and config. If either is missing → direct user to `/ado-tracker-init`.
 
 2. Detect current sprint:
    ```bash
    bash scripts/ado-cli.sh --action current-sprint
    ```
-   Present the sprint to the user for confirmation.
 
-3. Generate PBI fields from the user's description and the template:
-   - **Title**: Concise, actionable title derived from the description
-   - **Description**: Formatted using `description_format` from the template, with the user's description as the summary
+3. Generate PBI fields:
+   - **Title**: Apply `title_prefix_pbi` from template. Prompt user for `{featureArea}` placeholder value. Example: `[BizApp][Backend][Scheduling] Add retry logic`
+   - **Description**: Format using `description_format` from template
    - **Area Path**: From template
-   - **Iteration Path**: Current sprint iteration path
-   - **Tags**: Template defaults
-   - **Priority**: Template default (user can override)
+   - **Iteration Path**: Current sprint
+   - **State**: Ask user (default: New)
+   - **Assigned To**: `user.ado_email` from config
+   - **Priority**: Template default
+   - **Additional fields**: From template `fields` section
 
-4. Present the full PBI preview to the user:
-   ```
-   ## New PBI Preview
-   Title: <title>
-   Type: Product Backlog Item
-   Area Path: <area_path>
-   Sprint: <sprint>
-   Priority: <priority>
-   Tags: <tags>
+4. Present preview. Ask user to confirm or edit.
 
-   Description:
-   <formatted-description>
-   ```
-
-5. Ask: "Create this PBI? You can edit any field before confirming."
-
-6. On approval, create the work item:
+5. On approval, create:
    ```bash
-   bash scripts/ado-cli.sh --action create-work-item --params '{...}'
+   bash scripts/ado-cli.sh --action create-work-item --params '{
+     "type": "Product Backlog Item",
+     "title": "...",
+     "area_path": "...",
+     "iteration_path": "...",
+     "description": "...",
+     "assigned_to": "...",
+     "state": "...",
+     "fields": {...}
+   }'
    ```
 
-7. Report the result with the new work item ID and URL.
+6. Report result with work item ID and URL.
 
 ## Output
 Created PBI with ID and URL.

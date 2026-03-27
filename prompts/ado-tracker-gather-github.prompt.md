@@ -4,7 +4,7 @@
 Fetch GitHub PRs authored or reviewed by the user within a date range, filtered by configured organizations.
 
 ## Context
-- Config: `data/config.json` — read `github.orgs`, `github.exclude_repos`, `github.username`
+- Config: `data/config.json` — read `user.github_username`, `github.organizations`, `github.excluded_repos`
 - Tool: `gh` CLI (must be authenticated)
 
 ## Input
@@ -13,22 +13,24 @@ Fetch GitHub PRs authored or reviewed by the user within a date range, filtered 
 
 ## Instructions
 
-1. Read `data/config.json` for GitHub settings.
-2. Detect username if not configured:
-   ```bash
-   gh api user --jq .login
-   ```
-3. For each configured org, search for PRs authored by the user in the date range:
+1. Read `data/config.json`. Use `user.github_username` — do NOT call `gh api user`.
+
+2. For each org in `github.organizations`, search for PRs authored by the user:
    ```bash
    gh search prs --author=<username> --created=<from_date>..<to_date> --owner=<org> --json number,title,repository,state,createdAt,updatedAt,url --limit 100
    ```
-4. Also search for PRs reviewed by the user:
+   If results return exactly 100, fetch the next page with `--page 2` and continue until fewer than 100 results are returned.
+
+3. Also search for PRs reviewed by the user:
    ```bash
    gh search prs --reviewed-by=<username> --created=<from_date>..<to_date> --owner=<org> --json number,title,repository,state,createdAt,updatedAt,url --limit 100
    ```
-5. Filter out any repos in `github.exclude_repos`.
-6. Deduplicate (a PR you authored and reviewed should appear once, tagged as both).
-7. Return structured JSON array:
+
+4. Filter out any repos in `github.excluded_repos`.
+
+5. Deduplicate by PR URL. If a PR appears in both authored and reviewed results, keep one entry with `role: "author+reviewer"`.
+
+6. Return structured JSON array:
    ```json
    [
      {

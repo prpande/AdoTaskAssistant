@@ -1,11 +1,11 @@
 # Gather Notion Activity
 
 ## Goal
-Fetch Notion pages owned or substantially edited by the user within a date range.
+Fetch Notion pages created by the user within a date range.
 
 ## Context
-- Config: `data/config.json` — read `notion.scope`, `notion.exclude_databases`, `notion.track_ownership`, `notion.track_edits`
-- Tool: Notion MCP (`notion-search`, `notion-fetch`)
+- Config: `data/config.json` — read `user.notion_user_id`, `notion.scope`, `notion.excluded_databases`, `notion.filter_types`
+- Tool: Notion MCP (`notion-search`)
 
 ## Input
 - `from_date`: Start date (YYYY-MM-DD)
@@ -13,29 +13,38 @@ Fetch Notion pages owned or substantially edited by the user within a date range
 
 ## Instructions
 
-1. Read `data/config.json` for Notion settings.
-2. Use the Notion MCP `notion-search` tool to find recently edited pages:
-   - Search with a broad query or use `notion-query-data-sources` for database-scoped searches
-   - Filter results to the date range
-3. For each page found, determine the user's relationship:
-   - **Owner**: User created the page
-   - **Editor**: User made substantial edits (not just comments)
-   - Skip pages where the user only added comments
-4. If `notion.scope` is `"databases"`, only include pages from non-excluded databases.
-5. Filter out any databases in `notion.exclude_databases`.
-6. For each qualifying page, fetch enough detail to generate a meaningful task title:
+1. Read `data/config.json`. Use `user.notion_user_id` — do NOT call `notion-get-users`.
+
+2. Search Notion with the stored user ID:
+   ```
+   notion-search:
+     query: "*"
+     filters:
+       created_date_range: {start_date: <from_date>, end_date: <to_date + 1 day>}
+       created_by_user_ids: [<user.notion_user_id>]
+     page_size: 25
+     max_highlight_length: 50
+   ```
+
+3. Filter results:
+   - Only include results where `type` is in `notion.filter_types` (default: `["page"]`). Drop Slack, SharePoint, and other connector results.
+   - If `notion.scope` is `"databases"`, only include pages from non-excluded databases.
+   - Filter out any databases in `notion.excluded_databases`.
+
+4. For each qualifying page, extract:
    - Page title
-   - Parent database or workspace location
-   - Last edited time
-7. Return structured JSON array:
+   - Page ID and URL
+   - Parent context (from the search result metadata)
+   - Timestamp
+
+5. Return structured JSON array:
    ```json
    [
      {
        "type": "notion_page",
        "page_id": "abc-123",
-       "title": "Q2 Onboarding Flow Redesign",
-       "url": "https://notion.so/abc-123",
-       "parent": "Design Specs database",
+       "title": "Architecture Overview — AI Chatbot",
+       "url": "https://www.notion.so/abc123",
        "role": "owner",
        "last_edited": "2026-03-27"
      }
@@ -43,4 +52,4 @@ Fetch Notion pages owned or substantially edited by the user within a date range
    ```
 
 ## Output
-JSON array of Notion activity objects.
+JSON array of Notion activity objects (pages only, filtered to user).
