@@ -45,7 +45,8 @@ load_config
 # --- Helpers ---
 
 json_ok() {
-    printf '%s' "$1" | jq '{success: true, data: .}'
+    # Strip non-JSON lines (e.g., az CLI warnings) before parsing
+    printf '%s' "$1" | grep -v '^WARNING:' | jq '{success: true, data: .}'
 }
 
 json_error() {
@@ -77,6 +78,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --action) ACTION="$2"; shift 2 ;;
         --params) PARAMS="$2"; shift 2 ;;
+        --params-file) PARAMS=$(cat "$2"); shift 2 ;;
         *) json_error "Unknown argument: $1" "parse"; exit 1 ;;
     esac
 done
@@ -220,6 +222,10 @@ query_work_items() {
         json_error "$result" "$ACTION"
         exit 1
     }
+
+    if [[ -z "$result" || "$result" == "" ]]; then
+        result="[]"
+    fi
     json_ok "$result"
 }
 
@@ -321,14 +327,16 @@ query_my_sprint_items() {
 
     # Build iteration path filter from sprints array
     local sprints_json
-    sprints_json=$(printf '%s' "$PARAMS" | jq -r '.sprints // empty')
-    if [[ -z "$sprints_json" || "$sprints_json" == "null" ]]; then
+    sprints_json=$(printf '%s' "$PARAMS" | jq '.sprints // empty')
+    if [[ -z "$sprints_json" || "$sprints_json" == "null" || "$sprints_json" == "" ]]; then
         json_error "Missing required parameter: sprints (array of iteration paths)" "$ACTION"
         exit 1
     fi
 
     local iteration_clauses=""
     while IFS= read -r sprint_path; do
+        sprint_path="${sprint_path%$'\r'}"  # Strip carriage return (Windows)
+        if [[ -z "$sprint_path" ]]; then continue; fi
         if [[ -n "$iteration_clauses" ]]; then
             iteration_clauses="$iteration_clauses OR "
         fi
@@ -342,6 +350,11 @@ query_my_sprint_items() {
         json_error "$result" "$ACTION"
         exit 1
     }
+
+    # Handle empty results (az returns empty string, not [])
+    if [[ -z "$result" || "$result" == "" ]]; then
+        result="[]"
+    fi
     json_ok "$result"
 }
 
