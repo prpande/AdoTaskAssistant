@@ -61,23 +61,20 @@ Execute user-approved ADO changes — create PBIs with children, update states, 
    bash scripts/ado-cli.sh --action update-work-item --params '{"id": <id>, "state": "<new_state>"}'
    ```
 
-2. Always embed source URLs in descriptions. Use the template's `description_format`:
-   ```
-   ## Summary
-   <summary>
+2. Format descriptions using the template's `description_format`:
+   - `{overview}`: Summarize from activity source — PR description, Notion page summary, or commit messages
+   - `{scope}`: Bullet list of specific changes included — PR links, commit refs, Notion page links
+   Include source URLs in the scope section for future dedup matching.
 
-   ## Source
-   <PR links, Notion links, commit refs>
+3. **Auto-populate fields**: Read `auto_populate_from_source` from template. For each entry, map the activity source to the ADO field value. For example, if `Custom.Repo` → `repo_name`, set `Custom.Repo` to the repository name from the PR or commit source. Include these in the `fields` object when building params.
 
-   ## Date
-   <activity date range>
-   ```
+4. **Work Type**: Set `ScrumMB.WorkType` in fields using the work type from the proposal (inferred by propose-updates and confirmed by user).
 
-3. Track results for each action:
+5. Track results for each action:
    - Success: record work item ID, URL, action
    - Failure: record error, show to user, ask retry or skip
 
-4. Save results to sprint folder:
+6. Save results to sprint folder:
    ```json
    {
      "run_type": "daily|adhoc",
@@ -88,7 +85,7 @@ Execute user-approved ADO changes — create PBIs with children, update states, 
    }
    ```
 
-5. Present summary:
+7. Present summary:
    ```
    ## Applied Changes
    Created PBI #12345: "Title" (Committed) — 3 tasks
