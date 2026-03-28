@@ -1,96 +1,47 @@
 # Apply ADO Updates
 
 ## Goal
-Execute user-approved ADO changes — create PBIs with children, update states, close items.
+Execute user-approved ADO changes — create PBIs with children, update states.
 
 ## Context
-- ADO CLI: `bash scripts/ado-cli.sh`
+- ADO CLI: `bash scripts/ado-cli.sh` (see CLAUDE.md for usage patterns)
+- JSON construction: `bash scripts/build-params.sh` (see CLAUDE.md — always use for params with ADO paths)
 - Config: `data/config.json` — read `user.ado_email`
 
 ## Input
 - `approved_actions`: JSON array from propose-updates
-- `sprint_folder`: Path for saving results
+- `sprint_folder`: Path for saving results (e.g., `data/sprints/Sprint-2026-07`)
 
 ## Instructions
 
-1. For each approved action, execute:
+1. For each approved action:
 
-   **create** — Use `create-with-children` for PBIs with tasks.
-   Use `build-params.sh` to safely construct JSON (handles backslash escaping in ADO paths):
-   ```bash
-   # First build the PBI params
-   bash scripts/build-params.sh --output /tmp/ado-create-params.json \
-     --argjson pbi '{}' \
-     --argjson tasks '[]'
-   ```
-   For the PBI and tasks objects, construct them with `jq` to handle backslashes in area/iteration paths:
-   ```bash
-   PBI=$(jq -n \
-     --arg type "Product Backlog Item" \
-     --arg title "..." \
-     --arg area_path "MBScrum\Business Experience\squad-biz-app" \
-     --arg iteration_path "MBScrum\Sprint 2026-07" \
-     --arg description "..." \
-     --arg assigned_to "..." \
-     --arg state "..." \
-     '{type: $type, title: $title, area_path: $area_path, iteration_path: $iteration_path, description: $description, assigned_to: $assigned_to, state: $state}')
-   TASKS=$(jq -n \
-     --arg title "..." --arg description "..." --arg state "..." --arg assigned_to "..." \
-     '[{title: $title, description: $description, state: $state, assigned_to: $assigned_to}]')
-   bash scripts/build-params.sh --output /tmp/ado-create-params.json \
-     --argjson pbi "$PBI" \
-     --argjson tasks "$TASKS"
-   bash scripts/ado-cli.sh --action create-with-children --params-file /tmp/ado-create-params.json
-   ```
+   **create** — Use `ado-cli.sh --action create-with-children`. Build params with `build-params.sh` using `--argjson pbi` and `--argjson tasks`. Construct PBI and task objects with `jq -n --arg` to handle backslash escaping in area/iteration paths.
 
-   **create-task** — For adding tasks to existing PBIs:
-   ```bash
-   bash scripts/build-params.sh --output /tmp/ado-task-params.json \
-     --arg title "..." \
-     --argjson parent_id <id> \
-     --arg area_path "..." \
-     --arg iteration_path "..." \
-     --arg description "..." \
-     --arg assigned_to "..." \
-     --arg state "..."
-   bash scripts/ado-cli.sh --action create-task --params-file /tmp/ado-task-params.json
-   ```
+   **create-task** — Use `ado-cli.sh --action create-task` with `build-params.sh`.
 
-   **update-state** — For changing work item state (no backslash risk, inline is safe):
-   ```bash
-   bash scripts/ado-cli.sh --action update-work-item --params '{"id": <id>, "state": "<new_state>"}'
-   ```
+   **update-state** — Use `ado-cli.sh --action update-work-item --params '{"id": <id>, "state": "<state>"}'` (no backslash risk, inline is safe).
 
 2. Format descriptions using the template's `description_format`:
-   - `{overview}`: Summarize from activity source — PR description, Notion page summary, or commit messages
-   - `{scope}`: Bullet list of specific changes included — PR links, commit refs, Notion page links
-   Include source URLs in the scope section for future dedup matching.
+   - `{overview}`: Summarize from activity source
+   - `{scope}`: Bullet list of specific changes with source URLs for future dedup
 
-3. **Auto-populate fields**: Read `auto_populate_from_source` from template. For each entry, map the activity source to the ADO field value. For example, if `Custom.Repo` → `repo_name`, set `Custom.Repo` to the repository name from the PR or commit source. Include these in the `fields` object when building params.
+3. Auto-populate fields from `auto_populate_from_source` in template (e.g., `Custom.Repo` → repo name). Set `ScrumMB.WorkType` from the proposal's work type.
 
-4. **Work Type**: Set `ScrumMB.WorkType` in fields using the work type from the proposal (inferred by propose-updates and confirmed by user).
+4. Track results: success → record work item ID, URL. Failure → show error, ask retry or skip.
 
-5. Track results for each action:
-   - Success: record work item ID, URL, action
-   - Failure: record error, show to user, ask retry or skip
-
-6. Save results to sprint folder:
+5. Save results to `<sprint_folder>/updates/<date>-<mode>.json`:
    ```json
    {
      "run_type": "daily|adhoc",
-     "date": "2026-03-27",
+     "date": "2026-03-28",
      "sprints": ["Sprint 2026-07"],
      "applied": [{"action": "create", "pbi_id": 12345, "task_ids": [12346], "status": "success"}],
      "errors": []
    }
    ```
 
-7. Present summary:
-   ```
-   ## Applied Changes
-   Created PBI #12345: "Title" (Committed) — 3 tasks
-   Updated Task #12346 → Done
-   ```
+6. Present summary with work item IDs and links.
 
 ## Output
 Summary of applied changes with links to created/updated work items.
