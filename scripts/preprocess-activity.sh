@@ -88,9 +88,9 @@ printf '%s' "$ACTIVITY" | jq \
 # Helper functions
 # -------------------------------------------------------
 
-# Extract primary date from an activity item
+# Extract primary date from an activity item (truncated to YYYY-MM-DD)
 def primary_date:
-    if .type == "github_pr" then
+    (if .type == "github_pr" then
         .created_at // .updated_at // ""
     elif .type == "notion_page" then
         .last_edited // ""
@@ -99,7 +99,7 @@ def primary_date:
         (.date_range // "" | split(" to ") | first // "")
     else
         ""
-    end;
+    end) | .[:10];
 
 # Find the sprint that contains a given date string (YYYY-MM-DD)
 # Falls back to last sprint if no match
