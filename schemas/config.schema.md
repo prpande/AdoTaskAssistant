@@ -49,3 +49,9 @@ See `config/config.sample.json` for a working example with all fields.
 |-------|------|---------|-------------|
 | `enabled` | boolean | `true` | Whether to parse Claude Code session logs. |
 | `path` | string\|null | `null` | Path to Claude Code session logs. Auto-detected if null. |
+
+### `scan`
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `approval_mode` | `"interactive"` \| `"auto-confirm"` \| `"auto-apply"` | `"interactive"` | How scan proposals are approved. `interactive`: show and wait. `auto-confirm`: show then proceed immediately. `auto-apply`: apply without showing. |
+| `auto_apply_sources` | string[] | `[]` | Reserved for future per-source auto-apply rules. |
