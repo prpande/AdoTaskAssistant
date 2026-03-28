@@ -33,10 +33,13 @@ The user provides a work item ID or URL. If a URL is provided, extract the numer
    The key is: pipe `az` output directly to a file, then use `--slurp-file` to embed it.
    Never use `echo` or heredocs with raw JSON that may contain backslashes.
 4. Present the extracted template to the user in a readable format:
-   - Show each field with its value
-   - Highlight the area path and iteration pattern
-   - Show the description format template
-   - Show default tags and priority
+   - **Title prefix**: Show `pattern` and slot examples extracted from the title
+   - **Work type**: Show `default` value; note that inference keywords are pre-configured for all 8 ADO work types
+   - **Auto-populate**: Show which fields will be auto-filled from activity sources
+   - **Area path** and **iteration pattern**
+   - **Description format**: Show the Overview + Scope structure
+   - **Fields**: Show remaining default values (priority, value area)
+   - **Tags**
 5. Ask the user to review:
    - "Does this template look correct?"
    - "Would you like to change any fields or defaults?"
