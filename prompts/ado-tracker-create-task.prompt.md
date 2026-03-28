@@ -27,7 +27,9 @@ Create one or more child tasks under an existing PBI.
    - **Iteration Path**: Inherit from parent PBI
    - **State**: Ask user (default: New)
    - **Assigned To**: `user.ado_email` from config
-   - **Description**: Task-level description
+   - **Description**: Format using `description_format` from template:
+     - `{overview}`: Brief task purpose — what this task accomplishes
+     - `{scope}`: Specific deliverables — what exactly will be done
 
 4. Present preview with parent context.
 

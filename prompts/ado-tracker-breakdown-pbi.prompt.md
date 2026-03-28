@@ -27,6 +27,9 @@ Decompose an existing PBI into multiple child tasks, avoiding duplicates.
    - Tasks should cover the full scope of the PBI
    - **Dedup**: Skip any proposed task whose title closely matches an existing child task
    - Show existing children so the user can see what's already covered
+   - For each proposed task, generate a description using `description_format` from template:
+     - `{overview}`: What the task accomplishes in the context of the parent PBI
+     - `{scope}`: Specific deliverables and acceptance criteria for this task
 
 5. Present the breakdown:
    ```
