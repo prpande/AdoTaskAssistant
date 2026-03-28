@@ -32,9 +32,11 @@ The user provides a description of the work item.
 
 4. Present preview. Ask user to confirm or edit.
 
-5. On approval, create:
+5. On approval, create.
+   Write params to a temp file to avoid shell escaping issues with backslashes in ADO paths:
    ```bash
-   bash scripts/ado-cli.sh --action create-work-item --params '{
+   cat > /tmp/ado-create-pbi-params.json <<'EOF'
+   {
      "type": "Product Backlog Item",
      "title": "...",
      "area_path": "...",
@@ -43,7 +45,9 @@ The user provides a description of the work item.
      "assigned_to": "...",
      "state": "...",
      "fields": {...}
-   }'
+   }
+   EOF
+   bash scripts/ado-cli.sh --action create-work-item --params-file /tmp/ado-create-pbi-params.json
    ```
 
 6. Report result with work item ID and URL.

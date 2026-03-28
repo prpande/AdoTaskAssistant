@@ -85,14 +85,17 @@ Guide the user through PAT-based persistent auth:
 
 ## Step 4: Template Generation
 
-1. Using the work item fetched in Step 3, extract the template:
+1. Using the work item fetched in Step 3, extract the template.
+   Write params to a temp file to avoid shell escaping issues with backslashes in ADO paths:
    ```bash
-   bash scripts/template-manager.sh --action extract --params '{"work_item": <raw-json>}'
+   jq -n --argjson wi '<raw-json>' '{"work_item": $wi}' > /tmp/ado-extract-params.json
+   bash scripts/template-manager.sh --action extract --params-file /tmp/ado-extract-params.json
    ```
 2. Present the template to the user (follow the parse-reference-task prompt instructions).
 3. Allow edits. Save the final approved template:
    ```bash
-   bash scripts/template-manager.sh --action write --params '<template-json>'
+   echo '<template-json>' > /tmp/ado-write-params.json
+   bash scripts/template-manager.sh --action write --params-file /tmp/ado-write-params.json
    ```
 4. "Template saved. This will be used for all future PBI/Task creation."
 

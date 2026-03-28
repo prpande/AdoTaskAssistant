@@ -2,7 +2,7 @@
 # template-manager.sh — CRUD operations on the task template
 #
 # Usage:
-#   bash scripts/template-manager.sh --action <action> [--params '<json>']
+#   bash scripts/template-manager.sh --action <action> [--params '<json>' | --params-file <path>]
 #
 # Actions:
 #   read       — Read current template (returns JSON)
@@ -48,6 +48,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --action) ACTION="$2"; shift 2 ;;
         --params) PARAMS="$2"; shift 2 ;;
+        --params-file) PARAMS=$(cat "$2"); shift 2 ;;
         *) json_error "Unknown argument: $1" "parse"; exit 1 ;;
     esac
 done

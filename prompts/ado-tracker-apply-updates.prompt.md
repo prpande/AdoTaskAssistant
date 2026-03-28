@@ -15,12 +15,16 @@ Execute user-approved ADO changes — create PBIs with children, update states, 
 
 1. For each approved action, execute:
 
-   **create** — Use `create-with-children` for PBIs with tasks:
+   **create** — Use `create-with-children` for PBIs with tasks.
+   Write params to a temp file to avoid shell escaping issues with backslashes in ADO paths:
    ```bash
-   bash scripts/ado-cli.sh --action create-with-children --params '{
+   cat > /tmp/ado-create-params.json <<'EOF'
+   {
      "pbi": {"type": "Product Backlog Item", "title": "...", "area_path": "...", "iteration_path": "...", "description": "...", "assigned_to": "...", "state": "...", "fields": {...}},
      "tasks": [{"title": "...", "description": "...", "state": "...", "assigned_to": "..."}]
-   }'
+   }
+   EOF
+   bash scripts/ado-cli.sh --action create-with-children --params-file /tmp/ado-create-params.json
    ```
 
    **create-task** — For adding tasks to existing PBIs:

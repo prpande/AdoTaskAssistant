@@ -31,9 +31,11 @@ Create one or more child tasks under an existing PBI.
 
 4. Present preview with parent context.
 
-5. On approval, create and link:
+5. On approval, create and link.
+   Write params to a temp file to avoid shell escaping issues with backslashes in ADO paths:
    ```bash
-   bash scripts/ado-cli.sh --action create-task --params '{
+   cat > /tmp/ado-create-task-params.json <<'EOF'
+   {
      "title": "...",
      "parent_id": <pbi_id>,
      "area_path": "...",
@@ -41,7 +43,9 @@ Create one or more child tasks under an existing PBI.
      "description": "...",
      "assigned_to": "...",
      "state": "..."
-   }'
+   }
+   EOF
+   bash scripts/ado-cli.sh --action create-task --params-file /tmp/ado-create-task-params.json
    ```
 
 6. Report result with task ID, URL, and parent link.

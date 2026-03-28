@@ -20,6 +20,7 @@ This workspace is an ADO task tracking assistant operated via Claude Code CLI. I
   - `resolve-sprints-for-range` returns all sprints overlapping a date range
   - `query-my-sprint-items` queries user's items across multiple sprints (for dedup)
 - **Template operations:** `bash scripts/template-manager.sh --action <action> --params '<json>'`
+- **Shell escaping rule:** Both `ado-cli.sh` and `template-manager.sh` support `--params-file <path>` as an alternative to `--params '<json>'`. **Always use `--params-file`** when the JSON payload contains ADO paths with backslashes (area paths, iteration paths, raw work item JSON). Write the JSON to a temp file first, then pass the file path. This avoids bash shell expansion mangling backslashes before jq sees them.
 - **Git activity:** `bash scripts/extract-git-activity.sh --from <date> --to <date> --auto-detect <dir> --filter-org <org>`
 - **Session logs:** `bash scripts/parse-session-logs.sh --from <date> --to <date>` (best-effort)
 - **GitHub:** Use `gh` CLI directly
