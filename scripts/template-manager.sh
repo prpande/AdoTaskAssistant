@@ -108,7 +108,7 @@ validate_template() {
     local template
     template=$(cat "$TEMPLATE_FILE")
 
-    local required_fields=("work_item_type" "area_path" "iteration_path_pattern" "title_prefix_pbi" "description_format")
+    local required_fields=("work_item_type" "area_path" "iteration_path_pattern" "description_format")
     local missing=()
     for field in "${required_fields[@]}"; do
         local value
