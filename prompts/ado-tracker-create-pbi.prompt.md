@@ -33,20 +33,17 @@ The user provides a description of the work item.
 4. Present preview. Ask user to confirm or edit.
 
 5. On approval, create.
-   Write params to a temp file to avoid shell escaping issues with backslashes in ADO paths:
+   Use `build-params.sh` to safely construct JSON (handles backslash escaping in ADO paths):
    ```bash
-   cat > /tmp/ado-create-pbi-params.json <<'EOF'
-   {
-     "type": "Product Backlog Item",
-     "title": "...",
-     "area_path": "...",
-     "iteration_path": "...",
-     "description": "...",
-     "assigned_to": "...",
-     "state": "...",
-     "fields": {...}
-   }
-   EOF
+   bash scripts/build-params.sh --output /tmp/ado-create-pbi-params.json \
+     --arg type "Product Backlog Item" \
+     --arg title "..." \
+     --arg area_path "MBScrum\Business Experience\squad-biz-app" \
+     --arg iteration_path "MBScrum\Sprint 2026-07" \
+     --arg description "..." \
+     --arg assigned_to "..." \
+     --arg state "..." \
+     --argjson fields '{"Custom.Repo":"...","Microsoft.VSTS.Common.Priority":2}'
    bash scripts/ado-cli.sh --action create-work-item --params-file /tmp/ado-create-pbi-params.json
    ```
 

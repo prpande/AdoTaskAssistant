@@ -22,11 +22,16 @@ The user provides a work item ID or URL. If a URL is provided, extract the numer
    - **404**: Work item ID may be wrong, or it's in a different project. Confirm org/project config.
    - **Connection error**: Check network and `az devops configure --defaults`.
 3. On success, extract the template using the template manager.
-   Write the work item JSON to a temp file and use `--params-file` to avoid shell escaping issues with backslashes in ADO paths:
+   First save the raw work item JSON to a temp file, then use `build-params.sh` to wrap it safely:
    ```bash
-   echo '<raw-work-item-json>' > /tmp/ado-extract-params.json
+   # Save the raw work item JSON (from az CLI output) to a file
+   # (az CLI output is already valid JSON — write it directly, don't echo/heredoc it)
+   bash scripts/build-params.sh --output /tmp/ado-extract-params.json \
+     --slurp-file work_item /tmp/raw-work-item.json
    bash scripts/template-manager.sh --action extract --params-file /tmp/ado-extract-params.json
    ```
+   The key is: pipe `az` output directly to a file, then use `--slurp-file` to embed it.
+   Never use `echo` or heredocs with raw JSON that may contain backslashes.
 4. Present the extracted template to the user in a readable format:
    - Show each field with its value
    - Highlight the area path and iteration pattern
@@ -36,14 +41,20 @@ The user provides a work item ID or URL. If a URL is provided, extract the numer
    - "Does this template look correct?"
    - "Would you like to change any fields or defaults?"
 6. If the user requests changes, apply them.
-   Write params to a temp file when they contain ADO paths with backslashes:
+   Use `build-params.sh` with `--arg` for any values containing backslashes:
    ```bash
-   echo '{"updates": {<changed-fields>}}' > /tmp/ado-update-params.json
+   bash scripts/build-params.sh --output /tmp/ado-update-params.json \
+     --argjson updates '{"field": "new_value"}'
    bash scripts/template-manager.sh --action update --params-file /tmp/ado-update-params.json
    ```
-7. Save the final approved template:
+7. Save the final approved template.
+   Build the template JSON safely using `jq` to handle ADO path backslashes:
    ```bash
-   echo '<final-template-json>' > /tmp/ado-write-params.json
+   jq -n \
+     --arg area_path "MBScrum\Business Experience\squad-biz-app" \
+     --arg iter_pattern "MBScrum\Sprint {year}-{sprint_number}" \
+     '{area_path: $area_path, iteration_path_pattern: $iter_pattern, ...other fields...}' \
+     > /tmp/ado-write-params.json
    bash scripts/template-manager.sh --action write --params-file /tmp/ado-write-params.json
    ```
 8. Confirm: "Template saved to `data/task-template.json`. This will be used for all future PBI/Task creation."

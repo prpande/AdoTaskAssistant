@@ -86,15 +86,23 @@ Guide the user through PAT-based persistent auth:
 ## Step 4: Template Generation
 
 1. Using the work item fetched in Step 3, extract the template.
-   Write params to a temp file to avoid shell escaping issues with backslashes in ADO paths:
+   Save the raw work item JSON from the `show-work-item` response to a file, then use `build-params.sh`:
    ```bash
-   jq -n --argjson wi '<raw-json>' '{"work_item": $wi}' > /tmp/ado-extract-params.json
+   # Save raw work item JSON (the .data field from show-work-item response) directly to file
+   # NEVER use echo/heredoc — pipe az CLI output or use jq to write it
+   bash scripts/build-params.sh --output /tmp/ado-extract-params.json \
+     --slurp-file work_item /tmp/raw-work-item.json
    bash scripts/template-manager.sh --action extract --params-file /tmp/ado-extract-params.json
    ```
 2. Present the template to the user (follow the parse-reference-task prompt instructions).
-3. Allow edits. Save the final approved template:
+3. Allow edits. Save the final approved template using `jq` to construct JSON safely:
    ```bash
-   echo '<template-json>' > /tmp/ado-write-params.json
+   jq -n \
+     --arg area_path "MBScrum\Business Experience\squad-biz-app" \
+     --arg iter_pattern "MBScrum\Sprint {year}-{sprint_number}" \
+     --arg desc_format "## Summary\n{summary}\n\n## Source\n{source}\n\n## Date\n{date}" \
+     '{area_path: $area_path, iteration_path_pattern: $iter_pattern, description_format: $desc_format, ...}' \
+     > /tmp/ado-write-params.json
    bash scripts/template-manager.sh --action write --params-file /tmp/ado-write-params.json
    ```
 4. "Template saved. This will be used for all future PBI/Task creation."

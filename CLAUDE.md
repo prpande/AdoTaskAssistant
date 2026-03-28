@@ -20,7 +20,14 @@ This workspace is an ADO task tracking assistant operated via Claude Code CLI. I
   - `resolve-sprints-for-range` returns all sprints overlapping a date range
   - `query-my-sprint-items` queries user's items across multiple sprints (for dedup)
 - **Template operations:** `bash scripts/template-manager.sh --action <action> --params '<json>'`
-- **Shell escaping rule:** Both `ado-cli.sh` and `template-manager.sh` support `--params-file <path>` as an alternative to `--params '<json>'`. **Always use `--params-file`** when the JSON payload contains ADO paths with backslashes (area paths, iteration paths, raw work item JSON). Write the JSON to a temp file first, then pass the file path. This avoids bash shell expansion mangling backslashes before jq sees them.
+- **JSON params helper:** `bash scripts/build-params.sh --output <file> [--arg key value]... [--argjson key json]... [--slurp-file key path]...`
+  - **Always use this** to construct JSON params files for `ado-cli.sh` and `template-manager.sh`
+  - Uses `jq --arg` internally — handles backslash escaping in ADO paths automatically
+  - `--arg key value`: string values (backslashes handled safely)
+  - `--argjson key json`: pre-formed JSON (objects, arrays, numbers, booleans)
+  - `--slurp-file key path`: embed a JSON file under a key (e.g., wrap raw work item JSON)
+  - **Never use `echo`, heredocs, or inline `--params`** for JSON containing ADO paths (area paths, iteration paths) — backslashes will be mangled by bash/jq
+- **Shell escaping rule:** Both `ado-cli.sh` and `template-manager.sh` support `--params-file <path>` as an alternative to `--params '<json>'`. Use `--params` only for simple JSON without backslashes (e.g., `--params '{"id":1234}'`). For anything with ADO paths, use `build-params.sh` + `--params-file`.
 - **Git activity:** `bash scripts/extract-git-activity.sh --from <date> --to <date> --auto-detect <dir> --filter-org <org>`
 - **Session logs:** `bash scripts/parse-session-logs.sh --from <date> --to <date>` (best-effort)
 - **GitHub:** Use `gh` CLI directly

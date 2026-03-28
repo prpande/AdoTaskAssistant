@@ -16,23 +16,47 @@ Execute user-approved ADO changes — create PBIs with children, update states, 
 1. For each approved action, execute:
 
    **create** — Use `create-with-children` for PBIs with tasks.
-   Write params to a temp file to avoid shell escaping issues with backslashes in ADO paths:
+   Use `build-params.sh` to safely construct JSON (handles backslash escaping in ADO paths):
    ```bash
-   cat > /tmp/ado-create-params.json <<'EOF'
-   {
-     "pbi": {"type": "Product Backlog Item", "title": "...", "area_path": "...", "iteration_path": "...", "description": "...", "assigned_to": "...", "state": "...", "fields": {...}},
-     "tasks": [{"title": "...", "description": "...", "state": "...", "assigned_to": "..."}]
-   }
-   EOF
+   # First build the PBI params
+   bash scripts/build-params.sh --output /tmp/ado-create-params.json \
+     --argjson pbi '{}' \
+     --argjson tasks '[]'
+   ```
+   For the PBI and tasks objects, construct them with `jq` to handle backslashes in area/iteration paths:
+   ```bash
+   PBI=$(jq -n \
+     --arg type "Product Backlog Item" \
+     --arg title "..." \
+     --arg area_path "MBScrum\Business Experience\squad-biz-app" \
+     --arg iteration_path "MBScrum\Sprint 2026-07" \
+     --arg description "..." \
+     --arg assigned_to "..." \
+     --arg state "..." \
+     '{type: $type, title: $title, area_path: $area_path, iteration_path: $iteration_path, description: $description, assigned_to: $assigned_to, state: $state}')
+   TASKS=$(jq -n \
+     --arg title "..." --arg description "..." --arg state "..." --arg assigned_to "..." \
+     '[{title: $title, description: $description, state: $state, assigned_to: $assigned_to}]')
+   bash scripts/build-params.sh --output /tmp/ado-create-params.json \
+     --argjson pbi "$PBI" \
+     --argjson tasks "$TASKS"
    bash scripts/ado-cli.sh --action create-with-children --params-file /tmp/ado-create-params.json
    ```
 
    **create-task** — For adding tasks to existing PBIs:
    ```bash
-   bash scripts/ado-cli.sh --action create-task --params '{"title": "...", "parent_id": <id>, "description": "...", "state": "...", "assigned_to": "..."}'
+   bash scripts/build-params.sh --output /tmp/ado-task-params.json \
+     --arg title "..." \
+     --argjson parent_id <id> \
+     --arg area_path "..." \
+     --arg iteration_path "..." \
+     --arg description "..." \
+     --arg assigned_to "..." \
+     --arg state "..."
+   bash scripts/ado-cli.sh --action create-task --params-file /tmp/ado-task-params.json
    ```
 
-   **update-state** — For changing work item state:
+   **update-state** — For changing work item state (no backslash risk, inline is safe):
    ```bash
    bash scripts/ado-cli.sh --action update-work-item --params '{"id": <id>, "state": "<new_state>"}'
    ```
