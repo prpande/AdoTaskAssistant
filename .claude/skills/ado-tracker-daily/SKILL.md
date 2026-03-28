@@ -9,5 +9,5 @@ Execute the daily scan automation.
 
 ## Instructions
 
-1. Execute `automations/ado-tracker-daily.automation.md` — follow each step in sequence.
+1. Execute `automations/ado-tracker-scan.automation.md` with `mode: "daily"` — follow each step in sequence.
 2. This skill can be triggered manually or by the `/loop` schedule.
