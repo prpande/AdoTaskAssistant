@@ -33,31 +33,26 @@ Replace lines 142-196 in `scripts/template-manager.sh` with:
       (.fields["System.Title"] // "") as $title |
       # Extract all leading [bracket] groups with optional whitespace between them
       ($title | [scan("\\[([^\\]]+)\\]")] | map(.[0])) as $brackets |
+      # Build title_prefix generically from whatever brackets exist.
+      # Slot names are positional: slot_1, slot_2, etc. The first bracket
+      # is always the static prefix. Additional brackets become editable slots.
+      # This works for any team's prefix convention:
+      #   [BizApp] [Backend] [Feature] → static=[BizApp], slot_1=Backend, slot_2=Feature
+      #   [Platform] [Payments] → static=[Platform], slot_1=Payments
+      #   [Mobile] → static=[Mobile] (no slots, user provides full title)
       (if ($brackets | length) == 0 then
         { static: "", pattern: "{title}", slots: {} }
-      elif ($brackets | length) == 1 then
-        { static: ("["+ $brackets[0] + "]"), pattern: ("[" + $brackets[0] + "][{layer}][{feature}]"),
-          slots: {
-            layer: { description: "Code layer", examples: ["Backend", "Frontend", "Infra"] },
-            feature: { description: "Feature area or acronym", examples: [] }
-          }
-        }
-      elif ($brackets | length) == 2 then
-        { static: ("[" + $brackets[0] + "]"),
-          pattern: ("[" + $brackets[0] + "][{layer}][{feature}]"),
-          slots: {
-            layer: { description: "Code layer", examples: [$brackets[1]] },
-            feature: { description: "Feature area or acronym", examples: [] }
-          }
-        }
       else
-        { static: ("[" + $brackets[0] + "]"),
-          pattern: ("[" + $brackets[0] + "][{layer}][{feature}]"),
-          slots: {
-            layer: { description: "Code layer", examples: [$brackets[1]] },
-            feature: { description: "Feature area or acronym", examples: [$brackets[2]] }
-          }
-        }
+        ($brackets[0]) as $static_val |
+        ($brackets[1:]) as $slot_brackets |
+        # Build pattern: static bracket + slot placeholders
+        (("[" + $static_val + "]") + ($slot_brackets | to_entries | map("[{slot_" + (.key + 1 | tostring) + "}]") | join(""))) as $pattern |
+        # Build slots object from remaining brackets
+        ($slot_brackets | to_entries | map({
+          key: ("slot_" + (.key + 1 | tostring)),
+          value: { description: ("Title tag " + (.key + 1 | tostring) + " (from reference: " + .value + ")"), examples: [.value] }
+        }) | from_entries) as $slots |
+        { static: ("[" + $static_val + "]"), pattern: $pattern, slots: $slots }
       end) as $title_prefix |
 
       # --- Work type ---
@@ -172,8 +167,8 @@ bash scripts/template-manager.sh --action extract --params-file /tmp/ado-extract
 
 Expected output:
 - `title_prefix.static` = `"[BizApp]"`
-- `title_prefix.pattern` = `"[BizApp][{layer}][{feature}]"`
-- `title_prefix.slots.layer.examples` = `["Backend"]`
+- `title_prefix.pattern` = `"[BizApp][{slot_1}]"`
+- `title_prefix.slots.slot_1.examples` = `["Backend"]`
 - `work_type.default` = `"New Feature Development"`
 - `auto_populate_from_source` = `{"Custom.Repo": "repo_name"}`
 - `fields` does NOT contain `Custom.*` booleans, `Custom.Repo`, or `ScrumMB.WorkType`
@@ -195,7 +190,7 @@ bash scripts/build-params.sh --output /tmp/ado-extract-3.json \
 bash scripts/template-manager.sh --action extract --params-file /tmp/ado-extract-3.json
 ```
 
-Expected: `slots.layer.examples` = `["Frontend"]`, `slots.feature.examples` = `["Scheduling"]`
+Expected: `slots.slot_1.examples` = `["Frontend"]`, `slots.slot_2.examples` = `["Scheduling"]`
 
 - [ ] **Step 4: Test with a title that has no brackets**
 
@@ -293,7 +288,7 @@ Defines the reusable structure for creating new ADO work items. Generated once f
 | `title_prefix` | object | Title prefix configuration (see below). |
 | `title_prefix.static` | string | Fixed portion always prepended. e.g., `"[BizApp]"` |
 | `title_prefix.pattern` | string | Full pattern with slots. e.g., `"[BizApp][{layer}][{feature}]"` |
-| `title_prefix.slots` | object | Map of slot name → `{description, examples}`. |
+| `title_prefix.slots` | object | Map of positional slot name (slot_1, slot_2, ...) → `{description, examples}`. Derived from reference title brackets. |
 | `work_type` | object | Work type configuration (see below). |
 | `work_type.default` | string | Default work type. e.g., `"New Feature Development"` |
 | `work_type.inference_keywords` | object | Map of work type → keyword array for inference from activity. |
@@ -313,10 +308,9 @@ Defines the reusable structure for creating new ADO work items. Generated once f
   "iteration_path_pattern": "MBScrum\\Sprint {year}-{sprint_number}",
   "title_prefix": {
     "static": "[BizApp]",
-    "pattern": "[BizApp][{layer}][{feature}]",
+    "pattern": "[BizApp][{slot_1}]",
     "slots": {
-      "layer": { "description": "Code layer", "examples": ["Backend"] },
-      "feature": { "description": "Feature area or acronym", "examples": [] }
+      "slot_1": { "description": "Title tag 1 (from reference: Backend)", "examples": ["Backend"] }
     }
   },
   "work_type": {
@@ -410,10 +404,10 @@ The user provides a description of the work item.
 
 3. **Title**: Build the title using the template's `title_prefix`:
    - Read `title_prefix.pattern` and `title_prefix.slots` from template
-   - For each slot, ask the user to provide a value. Show the slot's `description` and `examples`.
-     Example prompt: "Layer (e.g., Backend, Frontend, Infra):"
-   - Assemble: replace each `{slot}` in `pattern` with the user's value, append the descriptive title
-   - Example result: `[BizApp][Backend][Scheduling] Add retry logic`
+   - For each slot in `slots`, ask the user to provide a value. Show the slot's `description` and `examples`.
+     Example prompt: "slot_1 — Title tag 1 (from reference: Backend). Examples: Backend. Your value:"
+   - Assemble: replace each `{slot_N}` in `pattern` with the user's value, append the descriptive title
+   - Example result: `[BizApp][Backend] Add retry logic`
 
 4. **Work Type**: Ask the user to pick from the 8 available work types:
    - Customer Committed Features
@@ -751,8 +745,8 @@ echo "$RESULT" | jq '.data'
 
 Verify:
 - `title_prefix.static` = `"[BizApp]"`
-- `title_prefix.pattern` = `"[BizApp][{layer}][{feature}]"`
-- `title_prefix.slots.layer.examples` = `["Backend"]`
+- `title_prefix.pattern` = `"[BizApp][{slot_1}]"`
+- `title_prefix.slots.slot_1.examples` = `["Backend"]`
 - `work_type.default` = `"New Feature Development"`
 - `work_type.inference_keywords` has all 8 entries
 - `auto_populate_from_source.["Custom.Repo"]` = `"repo_name"`

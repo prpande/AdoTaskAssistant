@@ -29,10 +29,9 @@ Make template extraction intelligent: parse the reference work item's structure 
 
   "title_prefix": {
     "static": "[BizApp]",
-    "pattern": "[BizApp][{layer}][{feature}]",
+    "pattern": "[BizApp][{slot_1}]",
     "slots": {
-      "layer": { "description": "Code layer", "examples": ["Backend", "Frontend", "Infra"] },
-      "feature": { "description": "Feature area or acronym", "examples": ["Scheduling", "ProgressNotes"] }
+      "slot_1": { "description": "Title tag 1 (from reference: Backend)", "examples": ["Backend"] }
     }
   },
 
@@ -70,7 +69,7 @@ Make template extraction intelligent: parse the reference work item's structure 
 | Field | Before | After |
 |-------|--------|-------|
 | `title_prefix_pbi` | string (e.g., `"[BizApp]"`) | Removed. Replaced by `title_prefix` object. |
-| `title_prefix` | Did not exist | Object: `static`, `pattern`, `slots` |
+| `title_prefix` | Did not exist | Object: `static`, `pattern`, `slots` (positional: slot_1, slot_2, ...) |
 | `work_type` | Did not exist (was inside `fields` as `ScrumMB.WorkType`) | Object: `default`, `inference_keywords` |
 | `auto_populate_from_source` | Did not exist | Object mapping ADO field names to activity source keys |
 | `description_format` | `"## Summary\n{summary}\n\n## Source\n{source}\n\n## Date\n{date}"` | `"## Overview\n{overview}\n\n## Scope\n{scope}"` |
@@ -84,23 +83,30 @@ File: `scripts/template-manager.sh`, function `extract_template()`
 
 1. Read `System.Title` from the work item
 2. Match all leading bracket groups: regex `(\[[^\]]+\])\s*` at start of title (handles both `[A][B]` and `[A] [B]` with optional whitespace between brackets)
-3. First bracket group becomes `title_prefix.static` (e.g., `[BizApp]`)
-4. Remaining bracket groups become slots:
-   - Second bracket → `{layer}` slot, its value becomes an example
-   - Third bracket → `{feature}` slot, its value becomes an example
-5. Assemble `pattern` from all brackets with slots replaced by placeholders
+3. First bracket group becomes `title_prefix.static` (e.g., `[BizApp]`, `[Platform]`, `[Mobile]` — whatever the team uses)
+4. Remaining bracket groups become positional slots (`slot_1`, `slot_2`, etc.):
+   - Each slot's `description` includes the reference value for context
+   - Each slot's `examples` array contains the reference value
+5. Assemble `pattern` from static bracket + `{slot_N}` placeholders
 6. If title has no brackets, set `static` to empty string and `pattern` to `"{title}"` (no prefix convention detected)
+
+This is fully generic — works for any team's prefix convention:
 
 Example: `[BizApp] [Backend] Expose sorting...` produces:
 - `static`: `[BizApp]`
-- `pattern`: `[BizApp][{layer}]`
-- `slots.layer.examples`: `["Backend"]`
+- `pattern`: `[BizApp][{slot_1}]`
+- `slots.slot_1`: `{description: "Title tag 1 (from reference: Backend)", examples: ["Backend"]}`
 
-Example: `[BizApp] [Backend] [ProgressNotes] Add retry...` produces:
-- `static`: `[BizApp]`
-- `pattern`: `[BizApp][{layer}][{feature}]`
-- `slots.layer.examples`: `["Backend"]`
-- `slots.feature.examples`: `["ProgressNotes"]`
+Example: `[Platform] [Payments] [Checkout] Add retry...` produces:
+- `static`: `[Platform]`
+- `pattern`: `[Platform][{slot_1}][{slot_2}]`
+- `slots.slot_1`: `{description: "Title tag 1 (from reference: Payments)", examples: ["Payments"]}`
+- `slots.slot_2`: `{description: "Title tag 2 (from reference: Checkout)", examples: ["Checkout"]}`
+
+Example: `[Mobile] Fix login timeout` produces:
+- `static`: `[Mobile]`
+- `pattern`: `[Mobile]`
+- `slots`: `{}` (no additional slots — just the static prefix)
 
 ### Work type extraction
 
