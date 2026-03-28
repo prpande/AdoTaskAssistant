@@ -5,9 +5,12 @@ A Claude Code workspace that automatically tracks your work across GitHub, Notio
 ## Features
 
 - **Daily scan** — Detects PRs, Notion edits, Claude sessions, and git commits since last run
-- **Smart proposals** — Groups activity by source, proposes ADO PBI/Task creates/updates/closes
+- **Token-efficient** — Deterministic preprocessing (dedup, sprint mapping, keyword scoring) runs in bash scripts, not the LLM
+- **Smart proposals** — Groups activity by feature, proposes ADO PBI/Task creates/updates/closes
 - **Template-based** — Uses a reference ADO work item as a template for consistent formatting
-- **Sprint-aware** — Auto-detects current sprint, confirms before applying changes
+- **Sprint-aware** — Auto-detects sprints overlapping scan date range
+- **Configurable approval** — Start interactive, graduate to auto-confirm or auto-apply as you build trust
+- **Pending proposals** — Missed a scan? Proposals are saved and resumed on next interaction
 - **Ad-hoc mode** — Scan any date range on demand
 - **Manual creation** — Create PBIs, add tasks, break down PBIs via slash commands
 
@@ -49,4 +52,19 @@ The init wizard will walk you through:
 
 ## Data
 
-All user data is stored in `data/` (gitignored) and organized by sprint. See `config/config.sample.json` for configuration options.
+All user data is stored in `data/` (gitignored) and organized by sprint:
+- `data/config.json` — user settings (see `config/config.sample.json`)
+- `data/task-template.json` — generated from reference work item
+- `data/last-run.json` — last daily scan metadata
+- `data/pending-scan.json` — unreviewed proposal (auto-resumed)
+- `data/sprints/<Sprint>/activity/` — gathered activity snapshots
+- `data/sprints/<Sprint>/updates/` — applied changes log
+
+### Approval Modes
+
+Set `scan.approval_mode` in `data/config.json`:
+| Mode | Behavior |
+|------|----------|
+| `interactive` | Show proposal, wait for approval (default) |
+| `auto-confirm` | Show proposal, proceed immediately |
+| `auto-apply` | Apply without showing, summarize after |
