@@ -179,7 +179,7 @@ Present a summary for confirmation.
 
 "Setup is complete! Would you like to run an initial scan now?"
 - If yes: "What date range? (e.g., `last week`, `2026-03-20 to 2026-03-27`, or `today`)"
-  - Execute `ado-tracker-adhoc.automation.md` with the specified range.
+  - Execute `automations/ado-tracker-scan.automation.md` with `mode: "adhoc"` and the specified range.
 - If no: "No problem. You can run `/ado-tracker-daily` anytime, or wait for the scheduled run."
 
 ## Step 7: Schedule
