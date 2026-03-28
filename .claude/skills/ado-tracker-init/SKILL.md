@@ -86,15 +86,30 @@ Guide the user through PAT-based persistent auth:
 ## Step 4: Template Generation
 
 1. Using the work item fetched in Step 3, extract the template.
-   Write params to a temp file to avoid shell escaping issues with backslashes in ADO paths:
+   Save the raw work item JSON from the `show-work-item` response to a file, then use `build-params.sh`:
    ```bash
-   jq -n --argjson wi '<raw-json>' '{"work_item": $wi}' > /tmp/ado-extract-params.json
+   # Save raw work item JSON (the .data field from show-work-item response) directly to file
+   # NEVER use echo/heredoc — pipe az CLI output or use jq to write it
+   bash scripts/build-params.sh --output /tmp/ado-extract-params.json \
+     --slurp-file work_item /tmp/raw-work-item.json
    bash scripts/template-manager.sh --action extract --params-file /tmp/ado-extract-params.json
    ```
-2. Present the template to the user (follow the parse-reference-task prompt instructions).
-3. Allow edits. Save the final approved template:
+2. Present the extracted template to the user in a readable format:
+   - **Title prefix**: Show `pattern` and the extracted slot examples (slots are positional: slot_1, slot_2, etc.)
+   - **Work type**: Show `default` and note that inference keywords are pre-configured for all 8 ADO work types
+   - **Auto-populate**: Show which fields will be filled from activity sources (e.g., `Custom.Repo`)
+   - **Area path** and **iteration pattern**
+   - **Description format**: Show the Overview + Scope structure
+   - **Fields**: Show remaining default field values
+   - **Priority** and **tags**
+3. Allow edits. Save the final approved template using `jq` to construct JSON safely:
    ```bash
-   echo '<template-json>' > /tmp/ado-write-params.json
+   jq -n \
+     --arg area_path "MBScrum\Business Experience\squad-biz-app" \
+     --arg iter_pattern "MBScrum\Sprint {year}-{sprint_number}" \
+     --arg desc_format "## Overview\n{overview}\n\n## Scope\n{scope}" \
+     '{area_path: $area_path, iteration_path_pattern: $iter_pattern, description_format: $desc_format, ...}' \
+     > /tmp/ado-write-params.json
    bash scripts/template-manager.sh --action write --params-file /tmp/ado-write-params.json
    ```
 4. "Template saved. This will be used for all future PBI/Task creation."
@@ -164,7 +179,7 @@ Present a summary for confirmation.
 
 "Setup is complete! Would you like to run an initial scan now?"
 - If yes: "What date range? (e.g., `last week`, `2026-03-20 to 2026-03-27`, or `today`)"
-  - Execute `ado-tracker-adhoc.automation.md` with the specified range.
+  - Execute `automations/ado-tracker-scan.automation.md` with `mode: "adhoc"` and the specified range.
 - If no: "No problem. You can run `/ado-tracker-daily` anytime, or wait for the scheduled run."
 
 ## Step 7: Schedule

@@ -28,5 +28,9 @@
   "session_logs": {
     "enabled": true,
     "path": null
+  },
+  "scan": {
+    "approval_mode": "interactive",
+    "auto_apply_sources": []
   }
 }

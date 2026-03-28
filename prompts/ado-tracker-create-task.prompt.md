@@ -27,26 +27,13 @@ Create one or more child tasks under an existing PBI.
    - **Iteration Path**: Inherit from parent PBI
    - **State**: Ask user (default: New)
    - **Assigned To**: `user.ado_email` from config
-   - **Description**: Task-level description
+   - **Description**: Format using `description_format` from template:
+     - `{overview}`: Brief task purpose — what this task accomplishes
+     - `{scope}`: Specific deliverables — what exactly will be done
 
 4. Present preview with parent context.
 
-5. On approval, create and link.
-   Write params to a temp file to avoid shell escaping issues with backslashes in ADO paths:
-   ```bash
-   cat > /tmp/ado-create-task-params.json <<'EOF'
-   {
-     "title": "...",
-     "parent_id": <pbi_id>,
-     "area_path": "...",
-     "iteration_path": "...",
-     "description": "...",
-     "assigned_to": "...",
-     "state": "..."
-   }
-   EOF
-   bash scripts/ado-cli.sh --action create-task --params-file /tmp/ado-create-task-params.json
-   ```
+5. On approval, create using `build-params.sh` + `ado-cli.sh --action create-task` (see CLAUDE.md for patterns). Include: title, parent_id, area_path, iteration_path, description, assigned_to, state.
 
 6. Report result with task ID, URL, and parent link.
 

@@ -1,105 +1,91 @@
 # Propose ADO Updates
 
 ## Goal
-Take gathered activity, cross-reference with existing ADO work items, resolve sprints, deduplicate, determine state, and present a grouped proposal for user approval.
+Review pre-computed activity data, apply judgment for grouping and titles, and present a proposal for user approval.
 
 ## Context
-- ADO CLI: `bash scripts/ado-cli.sh`
-- Template: `bash scripts/template-manager.sh --action read`
-- Config: `data/config.json` — read `user.ado_email`
+- Template: `data/task-template.json` (read for title prefix, description format)
+- Config: `data/config.json` (read for `user.ado_email`, `scan.approval_mode`)
 
 ## Input
-- `activity`: Combined JSON from all gather prompts (GitHub, Notion, sessions/git)
-- `sprints`: Array of overlapping sprints from `resolve-sprints-for-range`
+- `preprocessed_file`: Path to JSON from preprocess + dedup pipeline. Each item has:
+  - `source`: Original activity (type, url, title, repo, state, branch, dates)
+  - `sprint` / `sprint_path`: Assigned sprint
+  - `inferred_work_type` / `work_type_confidence` / `work_type_signals`: Script's keyword scoring
+  - `inferred_state`: Deterministic state (Done/Committed)
+  - `group_hint`: Branch prefix for cross-repo grouping
+  - `dedup.status`: `"new"` | `"tracked"` | `"potential_match"`
+  - `dedup.work_item_id` / `dedup.existing_title` / `dedup.similarity`: Match details
+  - `dedup.state_update`: Proposed state change for tracked items (or null)
+- `sprints`: Array of sprint objects with name, path, start, end
 
 ## Instructions
 
-### Phase 1: Map activity to sprints
+### Review preprocessed inferences
 
-For each activity item, determine which sprint it belongs to based on the item's date and the sprint date ranges. An activity's primary date is:
-- GitHub PR: `created_at`
-- Notion page: `last_edited`
-- Git commits: date of first commit in the group
+Use the script's inferences as starting points. Override when your judgment says otherwise:
+- **Dedup**: Items with `"status": "tracked"` (exact URL match) are definitive — skip them. Items with `"status": "potential_match"` need your review — check the source URLs, titles, and broader context to decide if they're truly duplicates or separate work.
+- **Work type**: If `work_type_confidence` < 0.5, flag to the user for confirmation. If the broader context contradicts the keyword score (e.g., "fix" keyword but actually a new feature), override.
+- **State**: The script's state assignment is deterministic and correct. Only override if you have specific context (e.g., a mixed-source group should use the most active state).
 
-### Phase 2: Dedup against existing items
+### Group new items into PBIs
 
-1. Query existing work items across all overlapping sprints:
-   ```bash
-   bash scripts/ado-cli.sh --action query-my-sprint-items --params '{"sprints": [<sprint-paths>]}'
-   ```
+For items with `"dedup.status": "new"`, group into proposed PBIs:
 
-2. For each existing work item, scan its description for source URLs (GitHub PR links, Notion page links).
-
-3. Build a lookup: `{source_url → work_item_id}`
-
-4. For each gathered activity item:
-   - If its source URL is in the lookup → mark as **already tracked**
-   - If title keywords overlap significantly with an existing item → mark as **potential match** (flag for user)
-   - Otherwise → mark as **new**
-
-### Phase 3: Smart grouping of new items
-
-Group unmatched activity using these signals (in priority order):
-1. **Git branch name prefix** — same branch prefix across repos = same feature (e.g., `pp/gstBooking-2503` in Scheduling + Clients)
+1. **Branch prefix** — items sharing a `group_hint` across repos likely belong together
 2. **PR cross-references** — PR body or commits mentioning other repos/PRs
 3. **Notion page hierarchy** — pages sharing a parent or title pattern
 4. **Time proximity** — commits in the same repo on the same day
+5. **Single-item groups** — standalone items become their own PBI
 
 Each group becomes one proposed PBI with child tasks.
 
-### Phase 4: Determine state
+### Write titles and descriptions
 
-Apply the template's `title_prefix_pbi` to PBI titles (prompt user for `{featureArea}` if needed).
+**Title**: Read `title_prefix.pattern` and `title_prefix.slots` from template.
+- The `static` portion is always included
+- For each slot, infer a value from context (repo name, PR title, activity type) or leave as `{slot_N}` for user to fill
+- Append a concise descriptive title summarizing the work
 
-Set state based on source type:
+**Description**: Use `description_format` from template:
+- `{overview}`: Summarize from activity source — what was done and why
+- `{scope}`: Bullet list of specific changes, with source URLs for future dedup matching
 
-| Source | PBI State | Task State | Auto-update to Done? |
-|--------|-----------|------------|---------------------|
-| GitHub PR (open) | Committed | In Progress | Yes — when PR merges |
-| GitHub PR (merged) | Done | Done | N/A |
-| Notion page | Committed | In Progress | **Never** — user decides |
-| Git commits (no PR) | Committed | In Progress | Never |
+**Auto-populate fields**: Read `auto_populate_from_source` from template. Map activity source to ADO field values (e.g., `Custom.Repo` → repo name).
 
-If a group contains mixed sources (e.g., merged PR + open PR), use the most active state (Committed over Done).
+### Determine state for groups
 
-### Phase 5: State lifecycle updates for existing items
+If a group has mixed sources, use the most active state:
+- All merged PRs → Done
+- Any open PR or Notion page → Committed
+- Committed is the default
 
-For items marked as **already tracked**, check if state needs updating:
-- If a tracked PR was open but is now merged → propose **update-state → Done**
-- If all child tasks of a PBI are now Done → propose **update-parent-state → Done**
-- Notion-sourced tasks → **never propose auto-close**
-
-### Phase 6: Present proposal
+### Present proposal
 
 Group by sprint, then by action type:
 
 ```
-## Sprint 2026-06 (Mar 11 – Mar 24)
-
-### State Updates
-- Task #12346 → Done (PR #1034 now merged)
-- PBI #12345 → Done (all children completed)
-
 ## Sprint 2026-07 (Mar 25 – Apr 7)
 
 ### New Items
-1. [BizApp][Backend][Feature] Title — source summary
-   Tasks: task1 (Done), task2 (In Progress)
+1. [BizApp][Backend] Fix booking retry — Reliability & Stabilization
+   Tasks: PR #1234 (Done), commits in Scheduling (Committed)
+
+### State Updates
+- Task #12345 → Done (PR #1034 now merged)
 
 ### Already Tracked (skipped)
-- PR #808 covered by PBI #12345
+- PR #808 → PBI #12340
 ```
 
 Always assign all items to `user.ado_email` from config.
-Always embed source URLs in descriptions for future dedup.
-Always use `description_format` from template for PBI descriptions.
 
-### Controls
+### Handle approval
 
-After presenting, offer:
-- "Enter item numbers to approve (e.g., `1,3`), `all`, or `none`."
-- "Enter `expand <number>` for full preview."
-- "Enter `edit <number>` to modify before approving."
+Check `scan.approval_mode` from config (default: `"interactive"`):
+- `interactive`: "Enter item numbers to approve (e.g., `1,3`), `all`, or `none`. Use `expand <N>` for details, `edit <N>` to modify."
+- `auto-confirm`: Display the proposal, then immediately proceed to apply.
+- `auto-apply`: Skip presentation, proceed directly to apply.
 
 Return approved items as structured JSON for the apply step.
 
@@ -110,7 +96,7 @@ JSON array of approved actions:
   {
     "action": "create",
     "sprint_path": "MBScrum\\Sprint 2026-07",
-    "pbi": {"title": "...", "description": "...", "state": "Committed", "assigned_to": "..."},
+    "pbi": {"title": "...", "description": "...", "state": "Committed", "assigned_to": "...", "work_type": "...", "fields": {}},
     "tasks": [{"title": "...", "state": "Done", "description": "..."}]
   },
   {

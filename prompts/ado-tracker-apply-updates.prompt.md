@@ -1,75 +1,47 @@
 # Apply ADO Updates
 
 ## Goal
-Execute user-approved ADO changes — create PBIs with children, update states, close items.
+Execute user-approved ADO changes — create PBIs with children, update states.
 
 ## Context
-- ADO CLI: `bash scripts/ado-cli.sh`
+- ADO CLI: `bash scripts/ado-cli.sh` (see CLAUDE.md for usage patterns)
+- JSON construction: `bash scripts/build-params.sh` (see CLAUDE.md — always use for params with ADO paths)
 - Config: `data/config.json` — read `user.ado_email`
 
 ## Input
 - `approved_actions`: JSON array from propose-updates
-- `sprint_folder`: Path for saving results
+- `sprint_folder`: Path for saving results (e.g., `data/sprints/Sprint-2026-07`)
 
 ## Instructions
 
-1. For each approved action, execute:
+1. For each approved action:
 
-   **create** — Use `create-with-children` for PBIs with tasks.
-   Write params to a temp file to avoid shell escaping issues with backslashes in ADO paths:
-   ```bash
-   cat > /tmp/ado-create-params.json <<'EOF'
-   {
-     "pbi": {"type": "Product Backlog Item", "title": "...", "area_path": "...", "iteration_path": "...", "description": "...", "assigned_to": "...", "state": "...", "fields": {...}},
-     "tasks": [{"title": "...", "description": "...", "state": "...", "assigned_to": "..."}]
-   }
-   EOF
-   bash scripts/ado-cli.sh --action create-with-children --params-file /tmp/ado-create-params.json
-   ```
+   **create** — Use `ado-cli.sh --action create-with-children`. Build params with `build-params.sh` using `--argjson pbi` and `--argjson tasks`. Construct PBI and task objects with `jq -n --arg` to handle backslash escaping in area/iteration paths.
 
-   **create-task** — For adding tasks to existing PBIs:
-   ```bash
-   bash scripts/ado-cli.sh --action create-task --params '{"title": "...", "parent_id": <id>, "description": "...", "state": "...", "assigned_to": "..."}'
-   ```
+   **create-task** — Use `ado-cli.sh --action create-task` with `build-params.sh`.
 
-   **update-state** — For changing work item state:
-   ```bash
-   bash scripts/ado-cli.sh --action update-work-item --params '{"id": <id>, "state": "<new_state>"}'
-   ```
+   **update-state** — Use `ado-cli.sh --action update-work-item --params '{"id": <id>, "state": "<state>"}'` (no backslash risk, inline is safe).
 
-2. Always embed source URLs in descriptions. Use the template's `description_format`:
-   ```
-   ## Summary
-   <summary>
+2. Format descriptions using the template's `description_format`:
+   - `{overview}`: Summarize from activity source
+   - `{scope}`: Bullet list of specific changes with source URLs for future dedup
 
-   ## Source
-   <PR links, Notion links, commit refs>
+3. Auto-populate fields from `auto_populate_from_source` in template (e.g., `Custom.Repo` → repo name). Set `ScrumMB.WorkType` from the proposal's work type.
 
-   ## Date
-   <activity date range>
-   ```
+4. Track results: success → record work item ID, URL. Failure → show error, ask retry or skip.
 
-3. Track results for each action:
-   - Success: record work item ID, URL, action
-   - Failure: record error, show to user, ask retry or skip
-
-4. Save results to sprint folder:
+5. Save results to `<sprint_folder>/updates/<date>-<mode>.json`:
    ```json
    {
      "run_type": "daily|adhoc",
-     "date": "2026-03-27",
+     "date": "2026-03-28",
      "sprints": ["Sprint 2026-07"],
      "applied": [{"action": "create", "pbi_id": 12345, "task_ids": [12346], "status": "success"}],
      "errors": []
    }
    ```
 
-5. Present summary:
-   ```
-   ## Applied Changes
-   Created PBI #12345: "Title" (Committed) — 3 tasks
-   Updated Task #12346 → Done
-   ```
+6. Present summary with work item IDs and links.
 
 ## Output
 Summary of applied changes with links to created/updated work items.

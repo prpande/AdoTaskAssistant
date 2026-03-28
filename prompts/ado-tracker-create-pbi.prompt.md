@@ -20,37 +20,42 @@ The user provides a description of the work item.
    bash scripts/ado-cli.sh --action current-sprint
    ```
 
-3. Generate PBI fields:
-   - **Title**: Apply `title_prefix_pbi` from template. Prompt user for `{featureArea}` placeholder value. Example: `[BizApp][Backend][Scheduling] Add retry logic`
-   - **Description**: Format using `description_format` from template
+3. **Title**: Build the title using the template's `title_prefix`:
+   - Read `title_prefix.pattern` and `title_prefix.slots` from template
+   - For each slot in `slots`, ask the user to provide a value. Show the slot's `description` and `examples`.
+     Example prompt: "slot_1 — Title tag 1 (from reference: Backend). Examples: Backend. Your value:"
+   - Assemble: replace each `{slot_N}` in `pattern` with the user's value, append the descriptive title
+   - Example result: `[BizApp][Backend] Add retry logic`
+
+4. **Work Type**: Ask the user to pick from the 8 available work types:
+   - Customer Committed Features
+   - Dedicated Tech Excellence
+   - New Feature Development
+   - Production Support & Incident remediation
+   - Production Systems & Operations
+   - Reliability & Stabilization
+   - Security & Compliance
+   - Software Maintenance
+   - Default to `work_type.default` from template
+
+5. **Description**: Format using `description_format` from template:
+   - `{overview}`: Summarize the user's description — what is being done and why
+   - `{scope}`: Detailed bullet list of what's included and what's out of scope
+
+6. **Other fields**:
    - **Area Path**: From template
-   - **Iteration Path**: Current sprint
+   - **Iteration Path**: Current sprint (replace placeholders in `iteration_path_pattern`)
    - **State**: Ask user (default: New)
    - **Assigned To**: `user.ado_email` from config
    - **Priority**: Template default
    - **Additional fields**: From template `fields` section
+   - **Work Type field**: Set `ScrumMB.WorkType` to the user's selection from step 4
 
-4. Present preview. Ask user to confirm or edit.
+7. Present preview. Ask user to confirm or edit.
 
-5. On approval, create.
-   Write params to a temp file to avoid shell escaping issues with backslashes in ADO paths:
-   ```bash
-   cat > /tmp/ado-create-pbi-params.json <<'EOF'
-   {
-     "type": "Product Backlog Item",
-     "title": "...",
-     "area_path": "...",
-     "iteration_path": "...",
-     "description": "...",
-     "assigned_to": "...",
-     "state": "...",
-     "fields": {...}
-   }
-   EOF
-   bash scripts/ado-cli.sh --action create-work-item --params-file /tmp/ado-create-pbi-params.json
-   ```
+8. On approval, create using `build-params.sh` + `ado-cli.sh --action create-work-item` (see CLAUDE.md for patterns). Include all fields: type, title, area_path, iteration_path, description, assigned_to, state, and the fields object with Priority, ValueArea, and ScrumMB.WorkType.
 
-6. Report result with work item ID and URL.
+9. Report result with work item ID and URL.
 
 ## Output
 Created PBI with ID and URL.

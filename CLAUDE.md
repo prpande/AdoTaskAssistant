@@ -5,7 +5,7 @@ This workspace is an ADO task tracking assistant operated via Claude Code CLI. I
 
 ## Architecture
 - **Prompts** (`prompts/`): Single-purpose reusable tasks, invokable individually
-- **Automations** (`automations/`): Multi-step orchestrated workflows that call prompts in sequence
+- **Automations** (`automations/`): Multi-step orchestrated workflows that call prompts in sequence (unified `ado-tracker-scan.automation.md` handles both daily and adhoc modes)
 - **Scripts** (`scripts/`): Bash utilities for deterministic work — always call via `bash scripts/<name>.sh`
 - **Skills** (`.claude/skills/`): Slash command definitions for Claude Code (each in its own directory as `SKILL.md`)
 - **Data** (`data/`): Gitignored runtime data — config, template, sprint activity/updates
@@ -20,7 +20,20 @@ This workspace is an ADO task tracking assistant operated via Claude Code CLI. I
   - `resolve-sprints-for-range` returns all sprints overlapping a date range
   - `query-my-sprint-items` queries user's items across multiple sprints (for dedup)
 - **Template operations:** `bash scripts/template-manager.sh --action <action> --params '<json>'`
-- **Shell escaping rule:** Both `ado-cli.sh` and `template-manager.sh` support `--params-file <path>` as an alternative to `--params '<json>'`. **Always use `--params-file`** when the JSON payload contains ADO paths with backslashes (area paths, iteration paths, raw work item JSON). Write the JSON to a temp file first, then pass the file path. This avoids bash shell expansion mangling backslashes before jq sees them.
+- **JSON params helper:** `bash scripts/build-params.sh --output <file> [--arg key value]... [--argjson key json]... [--slurp-file key path]...`
+  - **Always use this** to construct JSON params files for `ado-cli.sh` and `template-manager.sh`
+  - Uses `jq --arg` internally — handles backslash escaping in ADO paths automatically
+  - `--arg key value`: string values (backslashes handled safely)
+  - `--argjson key json`: pre-formed JSON (objects, arrays, numbers, booleans)
+  - `--slurp-file key path`: embed a JSON file under a key (e.g., wrap raw work item JSON)
+  - **Never use `echo`, heredocs, or inline `--params`** for JSON containing ADO paths (area paths, iteration paths) — backslashes will be mangled by bash/jq
+- **Shell escaping rule:** Both `ado-cli.sh` and `template-manager.sh` support `--params-file <path>` as an alternative to `--params '<json>'`. Use `--params` only for simple JSON without backslashes (e.g., `--params '{"id":1234}'`). For anything with ADO paths, use `build-params.sh` + `--params-file`.
+- **Activity preprocessing:** `bash scripts/preprocess-activity.sh --params-file <file>`
+  - Enriches gathered activity with sprint mapping, work type scoring, state assignment, branch group hints
+  - All operations are deterministic jq/bash — no LLM tokens consumed
+- **Dedup matching:** `bash scripts/dedup-matcher.sh --params-file <file>`
+  - Queries existing ADO items, matches by URL and title similarity, checks state lifecycle
+  - Gracefully falls back to "all new" if ADO query fails
 - **Git activity:** `bash scripts/extract-git-activity.sh --from <date> --to <date> --auto-detect <dir> --filter-org <org>`
 - **Session logs:** `bash scripts/parse-session-logs.sh --from <date> --to <date>` (best-effort)
 - **GitHub:** Use `gh` CLI directly
@@ -34,8 +47,9 @@ This workspace is an ADO task tracking assistant operated via Claude Code CLI. I
   - `github`: organizations, excluded_repos
   - `notion`: scope, excluded_databases, filter_types (default: ["page"])
   - `git`: source_root, auto_detect, filter_by_remote_org, explicit_repos
+  - `scan`: approval_mode (interactive/auto-confirm/auto-apply), auto_apply_sources
   - `schedule`: daily_scan_time
-- `data/task-template.json` — PBI/Task creation template (title_prefix_pbi, description_format, fields)
+- `data/task-template.json` — PBI/Task creation template (title_prefix with pattern/slots, work_type with inference keywords, auto_populate_from_source, description_format, fields)
 - `data/last-run.json` — last daily scan timestamp, sprint, counts, date range
 - If any data file is missing, guide the user to run `/ado-tracker-init`
 
@@ -56,10 +70,10 @@ State is set during creation and updated automatically based on source type:
 
 | Source | Created State | Auto-close? |
 |--------|--------------|-------------|
-| GitHub PR (open) | In Progress | Yes — when PR merges |
+| GitHub PR (open) | Committed | Yes — when PR merges |
 | GitHub PR (merged) | Done | N/A |
-| Notion page | In Progress | **Never** — user decides |
-| Git commits (no PR) | In Progress | Never |
+| Notion page | Committed | **Never** — user decides |
+| Git commits (no PR) | Committed | Never |
 
 All items are always assigned to `user.ado_email`.
 
@@ -73,8 +87,10 @@ When presenting proposed ADO changes:
 ## Data Organization
 All runtime data lives in `data/` (gitignored), organized by sprint:
 ```
+data/pending-scan.json                          — metadata for unreviewed proposals
 data/sprints/<Sprint-Name>/activity/<date>-<type>.json
 data/sprints/<Sprint-Name>/updates/<date>-<type>.json
+data/sprints/<Sprint-Name>/pending-proposal-<date>.json — saved proposal awaiting review
 ```
 
 ## Error Handling

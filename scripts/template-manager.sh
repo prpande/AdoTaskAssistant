@@ -108,7 +108,7 @@ validate_template() {
     local template
     template=$(cat "$TEMPLATE_FILE")
 
-    local required_fields=("work_item_type" "area_path" "iteration_path_pattern" "title_prefix_pbi" "description_format")
+    local required_fields=("work_item_type" "area_path" "iteration_path_pattern" "description_format")
     local missing=()
     for field in "${required_fields[@]}"; do
         local value
@@ -139,61 +139,93 @@ extract_template() {
 
     # Extract reusable fields, filter out instance-specific data
     local template
-    template=$(printf '%s' "$work_item" | jq '{
+    template=$(printf '%s' "$work_item" | jq '
+      # --- Title prefix parsing ---
+      (.fields["System.Title"] // "") as $title |
+      ($title | [scan("\\[([^\\]]+)\\]")] | map(.[0])) as $brackets |
+      (if ($brackets | length) == 0 then
+        { static: "", pattern: "{title}", slots: {} }
+      else
+        ($brackets[0]) as $static_val |
+        ($brackets[1:]) as $slot_brackets |
+        (("[" + $static_val + "]") + ($slot_brackets | to_entries | map("[{slot_" + (.key + 1 | tostring) + "}]") | join(""))) as $pattern |
+        ($slot_brackets | to_entries | map({
+          key: ("slot_" + (.key + 1 | tostring)),
+          value: { description: ("Title tag " + (.key + 1 | tostring) + " (from reference: " + .value + ")"), examples: [.value] }
+        }) | from_entries) as $slots |
+        { static: ("[" + $static_val + "]"), pattern: $pattern, slots: $slots }
+      end) as $title_prefix |
+
+      # --- Work type ---
+      { default: (.fields["ScrumMB.WorkType"] // "New Feature Development"),
+        inference_keywords: {
+          "Customer Committed Features": ["customer", "committed", "client-requested"],
+          "Dedicated Tech Excellence": ["tech-excellence", "innovation", "spike", "poc", "prototype"],
+          "New Feature Development": ["add", "implement", "create", "expose", "enable", "feature"],
+          "Production Support & Incident remediation": ["incident", "outage", "p1", "p2", "sev1", "sev2", "hotfix", "emergency"],
+          "Production Systems & Operations": ["infra", "deploy", "pipeline", "ci/cd", "monitoring", "alerting"],
+          "Reliability & Stabilization": ["fix", "bug", "flaky", "stabilize", "reliability", "retry", "resilience"],
+          "Security & Compliance": ["security", "vulnerability", "cve", "compliance", "audit", "gdpr", "pci"],
+          "Software Maintenance": ["update", "upgrade", "migrate", "bump", "deprecate", "refactor", "cleanup", "debt"]
+        }
+      } as $work_type |
+
+      # --- Auto-populate from source ---
+      (if .fields["Custom.Repo"] then {"Custom.Repo": "repo_name"} else {} end) as $auto_populate |
+
+      # --- Build template ---
+      {
         source_work_item_id: .id,
         work_item_type: .fields["System.WorkItemType"],
         area_path: .fields["System.AreaPath"],
         iteration_path_pattern: (
-            .fields["System.IterationPath"]
-            | if . then
-                # Replace the last numeric segment with {number} placeholder
-                (split("\\") | last | gsub("[0-9]{4}"; "{year}") | gsub("{year}-[0-9]+"; "{year}-{sprint_number}")) as $last_part |
-                (split("\\") | .[:-1] + [$last_part] | join("\\"))
-              else null end
+          .fields["System.IterationPath"]
+          | if . then
+              (split("\\\\") | last | gsub("[0-9]{4}"; "{year}") | gsub("\\{year\\}-[0-9]+"; "{year}-{sprint_number}")) as $last_part |
+              (split("\\\\") | .[:-1] + [$last_part] | join("\\"))
+            else null end
         ),
+        title_prefix: $title_prefix,
+        work_type: $work_type,
+        auto_populate_from_source: $auto_populate,
         fields: (
-            .fields
-            | del(
-                .["System.Id"],
-                .["System.Rev"],
-                .["System.Title"],
-                .["System.Description"],
-                .["System.AssignedTo"],
-                .["System.CreatedBy"],
-                .["System.CreatedDate"],
-                .["System.ChangedBy"],
-                .["System.ChangedDate"],
-                .["System.AuthorizedDate"],
-                .["System.RevisedDate"],
-                .["System.Watermark"],
-                .["System.CommentCount"],
-                .["System.BoardColumn"],
-                .["System.BoardColumnDone"],
-                .["System.BoardLane"],
-                .["System.WorkItemType"],
-                .["System.AreaPath"],
-                .["System.IterationPath"],
-                .["System.State"],
-                .["System.Reason"],
-                .["System.History"],
-                .["System.RelatedLinkCount"],
-                .["System.ExternalLinkCount"],
-                .["System.HyperLinkCount"],
-                .["System.AttachedFileCount"],
-                .["System.NodeName"],
-                .["System.AreaId"],
-                .["System.IterationId"],
-                .["System.TeamProject"]
-            )
-            | with_entries(select(.value != null and .value != "" and .value != 0))
+          .fields
+          | del(
+              .["System.Id"], .["System.Rev"], .["System.Title"],
+              .["System.Description"], .["System.AssignedTo"],
+              .["System.CreatedBy"], .["System.CreatedDate"],
+              .["System.ChangedBy"], .["System.ChangedDate"],
+              .["System.AuthorizedDate"], .["System.RevisedDate"],
+              .["System.Watermark"], .["System.CommentCount"],
+              .["System.BoardColumn"], .["System.BoardColumnDone"],
+              .["System.BoardLane"], .["System.WorkItemType"],
+              .["System.AreaPath"], .["System.IterationPath"],
+              .["System.State"], .["System.Reason"],
+              .["System.History"], .["System.RelatedLinkCount"],
+              .["System.ExternalLinkCount"], .["System.HyperLinkCount"],
+              .["System.AttachedFileCount"], .["System.NodeName"],
+              .["System.AreaId"], .["System.IterationId"],
+              .["System.TeamProject"], .["System.PersonId"],
+              .["System.AreaLevel1"], .["System.AreaLevel2"],
+              .["System.AreaLevel3"], .["System.IterationLevel1"],
+              .["System.IterationLevel2"], .["System.AuthorizedAs"],
+              .["ScrumMB.WorkType"], .["Custom.Repo"]
+          )
+          | with_entries(select(
+              (.key | startswith("Custom.") | not) or (.value | type != "boolean")
+          ))
+          | with_entries(select(.key | startswith("WEF_") | not))
+          | with_entries(select(.key | startswith("MB.") | not))
+          | with_entries(select(.value != null and .value != "" and .value != 0))
         ),
-        description_format: "## Summary\\n{summary}\\n\\n## Source\\n{source}\\n\\n## Date\\n{date}",
+        description_format: "## Overview\n{overview}\n\n## Scope\n{scope}",
         tags: (
-            .fields["System.Tags"]
-            | if . and . != "" then split("; ") else [] end
+          .fields["System.Tags"]
+          | if . and . != "" then split("; ") else [] end
         ),
         priority: (.fields["Microsoft.VSTS.Common.Priority"] // 2)
-    }')
+      }
+    ')
 
     json_ok "$template"
 }

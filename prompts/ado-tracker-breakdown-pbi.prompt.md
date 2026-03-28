@@ -27,6 +27,9 @@ Decompose an existing PBI into multiple child tasks, avoiding duplicates.
    - Tasks should cover the full scope of the PBI
    - **Dedup**: Skip any proposed task whose title closely matches an existing child task
    - Show existing children so the user can see what's already covered
+   - For each proposed task, generate a description using `description_format` from template:
+     - `{overview}`: What the task accomplishes in the context of the parent PBI
+     - `{scope}`: Specific deliverables and acceptance criteria for this task
 
 5. Present the breakdown:
    ```
@@ -43,21 +46,7 @@ Decompose an existing PBI into multiple child tasks, avoiding duplicates.
 
 6. Ask: "Approve all, select specific, or edit?"
 
-7. Create approved tasks using `create-task` action (which handles creation + parent linking).
-   Write params to a temp file to avoid shell escaping issues with backslashes in ADO paths:
-   ```bash
-   cat > /tmp/ado-create-task-params.json <<'EOF'
-   {
-     "title": "...",
-     "parent_id": <pbi_id>,
-     "area_path": "...",
-     "iteration_path": "...",
-     "assigned_to": "...",
-     "state": "..."
-   }
-   EOF
-   bash scripts/ado-cli.sh --action create-task --params-file /tmp/ado-create-task-params.json
-   ```
+7. Create approved tasks using `build-params.sh` + `ado-cli.sh --action create-task` (see CLAUDE.md for patterns). Include: title, parent_id, area_path, iteration_path, assigned_to, state.
 
 8. Report all created tasks.
 

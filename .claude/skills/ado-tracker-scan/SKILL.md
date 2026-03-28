@@ -16,4 +16,4 @@ If dates are not provided as arguments, ask the user.
 ## Instructions
 
 1. Parse `--from` and `--to` from the arguments.
-2. Execute `automations/ado-tracker-adhoc.automation.md` with the parsed date range.
+2. Execute `automations/ado-tracker-scan.automation.md` with `mode: "adhoc"` and the parsed date range.
