@@ -33,19 +33,7 @@ Create one or more child tasks under an existing PBI.
 
 4. Present preview with parent context.
 
-5. On approval, create and link.
-   Use `build-params.sh` to safely construct JSON (handles backslash escaping in ADO paths):
-   ```bash
-   bash scripts/build-params.sh --output /tmp/ado-create-task-params.json \
-     --arg title "..." \
-     --argjson parent_id <pbi_id> \
-     --arg area_path "..." \
-     --arg iteration_path "..." \
-     --arg description "..." \
-     --arg assigned_to "..." \
-     --arg state "..."
-   bash scripts/ado-cli.sh --action create-task --params-file /tmp/ado-create-task-params.json
-   ```
+5. On approval, create using `build-params.sh` + `ado-cli.sh --action create-task` (see CLAUDE.md for patterns). Include: title, parent_id, area_path, iteration_path, description, assigned_to, state.
 
 6. Report result with task ID, URL, and parent link.
 

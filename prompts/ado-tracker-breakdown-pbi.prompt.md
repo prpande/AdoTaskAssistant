@@ -46,18 +46,7 @@ Decompose an existing PBI into multiple child tasks, avoiding duplicates.
 
 6. Ask: "Approve all, select specific, or edit?"
 
-7. Create approved tasks using `create-task` action (which handles creation + parent linking).
-   Use `build-params.sh` to safely construct JSON (handles backslash escaping in ADO paths):
-   ```bash
-   bash scripts/build-params.sh --output /tmp/ado-create-task-params.json \
-     --arg title "..." \
-     --argjson parent_id <pbi_id> \
-     --arg area_path "..." \
-     --arg iteration_path "..." \
-     --arg assigned_to "..." \
-     --arg state "..."
-   bash scripts/ado-cli.sh --action create-task --params-file /tmp/ado-create-task-params.json
-   ```
+7. Create approved tasks using `build-params.sh` + `ado-cli.sh --action create-task` (see CLAUDE.md for patterns). Include: title, parent_id, area_path, iteration_path, assigned_to, state.
 
 8. Report all created tasks.
 

@@ -53,20 +53,7 @@ The user provides a description of the work item.
 
 7. Present preview. Ask user to confirm or edit.
 
-8. On approval, create.
-   Use `build-params.sh` to safely construct JSON (handles backslash escaping in ADO paths):
-   ```bash
-   bash scripts/build-params.sh --output /tmp/ado-create-pbi-params.json \
-     --arg type "Product Backlog Item" \
-     --arg title "..." \
-     --arg area_path "..." \
-     --arg iteration_path "..." \
-     --arg description "..." \
-     --arg assigned_to "..." \
-     --arg state "..." \
-     --argjson fields '{"Microsoft.VSTS.Common.Priority":4,"Microsoft.VSTS.Common.ValueArea":"Business","ScrumMB.WorkType":"..."}'
-   bash scripts/ado-cli.sh --action create-work-item --params-file /tmp/ado-create-pbi-params.json
-   ```
+8. On approval, create using `build-params.sh` + `ado-cli.sh --action create-work-item` (see CLAUDE.md for patterns). Include all fields: type, title, area_path, iteration_path, description, assigned_to, state, and the fields object with Priority, ValueArea, and ScrumMB.WorkType.
 
 9. Report result with work item ID and URL.
 
