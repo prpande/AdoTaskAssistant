@@ -47,9 +47,20 @@ Group unmatched activity using these signals (in priority order):
 
 Each group becomes one proposed PBI with child tasks.
 
-### Phase 4: Determine state
+### Phase 4: Determine title, work type, and state
 
-Apply the template's `title_prefix_pbi` to PBI titles (prompt user for `{featureArea}` if needed).
+**Title prefix**: Read `title_prefix.pattern` and `title_prefix.slots` from template. For each proposed PBI:
+- The `static` portion (e.g., `[BizApp]`) is always included
+- For each slot, infer a value from context (repo name, PR title, activity type) or leave as `{slot_N}` for user to fill during review
+
+**Work type inference**: For each proposed PBI, infer `ScrumMB.WorkType` from activity text:
+1. Collect text signals: PR titles, commit messages, Notion page titles
+2. Lowercase all text, scan against `work_type.inference_keywords` from template
+3. Count keyword matches per work type category. Highest score wins.
+4. Tie or no matches → use `work_type.default` from template
+5. Include the inferred work type in the proposal for user to confirm or change
+
+**Auto-populate fields**: Read `auto_populate_from_source` from template. For each mapping (e.g., `Custom.Repo` → `repo_name`), populate the field from the activity source.
 
 Set state based on source type:
 
@@ -83,7 +94,7 @@ Group by sprint, then by action type:
 ## Sprint 2026-07 (Mar 25 – Apr 7)
 
 ### New Items
-1. [BizApp][Backend][Feature] Title — source summary
+1. [BizApp][Backend][Feature] Title — Work Type: New Feature Development
    Tasks: task1 (Done), task2 (In Progress)
 
 ### Already Tracked (skipped)
@@ -92,7 +103,9 @@ Group by sprint, then by action type:
 
 Always assign all items to `user.ado_email` from config.
 Always embed source URLs in descriptions for future dedup.
-Always use `description_format` from template for PBI descriptions.
+Always use `description_format` from template for PBI descriptions:
+- `{overview}`: Summarize from activity source
+- `{scope}`: Bullet list of specific changes, with source URLs for future dedup
 
 ### Controls
 
@@ -110,7 +123,7 @@ JSON array of approved actions:
   {
     "action": "create",
     "sprint_path": "MBScrum\\Sprint 2026-07",
-    "pbi": {"title": "...", "description": "...", "state": "Committed", "assigned_to": "..."},
+    "pbi": {"title": "...", "description": "...", "state": "Committed", "assigned_to": "...", "work_type": "New Feature Development", "fields": {"Custom.Repo": "org/repo-name"}},
     "tasks": [{"title": "...", "state": "Done", "description": "..."}]
   },
   {
