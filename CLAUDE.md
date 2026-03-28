@@ -42,7 +42,7 @@ This workspace is an ADO task tracking assistant operated via Claude Code CLI. I
   - `notion`: scope, excluded_databases, filter_types (default: ["page"])
   - `git`: source_root, auto_detect, filter_by_remote_org, explicit_repos
   - `schedule`: daily_scan_time
-- `data/task-template.json` — PBI/Task creation template (title_prefix_pbi, description_format, fields)
+- `data/task-template.json` — PBI/Task creation template (title_prefix with pattern/slots, work_type with inference keywords, auto_populate_from_source, description_format, fields)
 - `data/last-run.json` — last daily scan timestamp, sprint, counts, date range
 - If any data file is missing, guide the user to run `/ado-tracker-init`
 

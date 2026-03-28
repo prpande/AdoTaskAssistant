@@ -94,13 +94,20 @@ Guide the user through PAT-based persistent auth:
      --slurp-file work_item /tmp/raw-work-item.json
    bash scripts/template-manager.sh --action extract --params-file /tmp/ado-extract-params.json
    ```
-2. Present the template to the user (follow the parse-reference-task prompt instructions).
+2. Present the extracted template to the user in a readable format:
+   - **Title prefix**: Show `pattern` and the extracted slot examples (slots are positional: slot_1, slot_2, etc.)
+   - **Work type**: Show `default` and note that inference keywords are pre-configured for all 8 ADO work types
+   - **Auto-populate**: Show which fields will be filled from activity sources (e.g., `Custom.Repo`)
+   - **Area path** and **iteration pattern**
+   - **Description format**: Show the Overview + Scope structure
+   - **Fields**: Show remaining default field values
+   - **Priority** and **tags**
 3. Allow edits. Save the final approved template using `jq` to construct JSON safely:
    ```bash
    jq -n \
      --arg area_path "MBScrum\Business Experience\squad-biz-app" \
      --arg iter_pattern "MBScrum\Sprint {year}-{sprint_number}" \
-     --arg desc_format "## Summary\n{summary}\n\n## Source\n{source}\n\n## Date\n{date}" \
+     --arg desc_format "## Overview\n{overview}\n\n## Scope\n{scope}" \
      '{area_path: $area_path, iteration_path_pattern: $iter_pattern, description_format: $desc_format, ...}' \
      > /tmp/ado-write-params.json
    bash scripts/template-manager.sh --action write --params-file /tmp/ado-write-params.json
