@@ -45,22 +45,23 @@ Guide the user through PAT-based persistent auth:
 
 1. Ask: "What is your Azure DevOps organization URL? (e.g., `https://dev.azure.com/your-org`)"
 2. Ask: "What is your ADO project name?"
-3. Configure defaults:
+3. Ask: "What is your ADO team name? (e.g., `squad-biz-app`, `Business Experience`)"
+4. Configure defaults:
    ```bash
    az devops configure --defaults organization=<org-url> project=<project-name>
    ```
-4. Ask: "Do you already have an Azure DevOps Personal Access Token (PAT) set up, or do you need to create one?"
+5. Ask: "Do you already have an Azure DevOps Personal Access Token (PAT) set up, or do you need to create one?"
    - If they need to create one:
      - "Go to: `<org-url>/_usersettings/tokens`"
      - "Create a new token with these scopes: **Work Items** (Read & Write), **Project and Team** (Read), **Build** (Read)"
      - "Set expiration to the maximum allowed (up to 1 year recommended)"
      - "Copy the token — you won't be able to see it again"
    - If they have one: proceed to next step.
-5. Ask: "Please set the `AZURE_DEVOPS_EXT_PAT` environment variable with your token. The best way depends on your shell:"
+6. Ask: "Please set the `AZURE_DEVOPS_EXT_PAT` environment variable with your token. The best way depends on your shell:"
    - **bash/zsh**: `echo 'export AZURE_DEVOPS_EXT_PAT=<your-token>' >> ~/.bashrc && source ~/.bashrc`
    - **Windows (PowerShell)**: `[System.Environment]::SetEnvironmentVariable('AZURE_DEVOPS_EXT_PAT', '<your-token>', 'User')`
    - "Tell me when you've set it. You may need to restart your terminal for it to take effect."
-6. After they confirm, verify: `echo $AZURE_DEVOPS_EXT_PAT | head -c 5` (just check it's set, don't display the full token)
+7. After they confirm, verify: `echo $AZURE_DEVOPS_EXT_PAT | head -c 5` (just check it's set, don't display the full token)
 
 ## Step 3: Reference Task & Auth Validation
 
@@ -94,7 +95,14 @@ Guide the user through PAT-based persistent auth:
      --slurp-file work_item /tmp/raw-work-item.json
    bash scripts/template-manager.sh --action extract --params-file /tmp/ado-extract-params.json
    ```
-2. Present the extracted template to the user in a readable format:
+2. **Write the extracted template immediately** so it exists on disk before any edits:
+   ```bash
+   # Pipe the extracted data directly into a write operation
+   bash scripts/template-manager.sh --action extract --params-file /tmp/ado-extract-params.json \
+     | jq '.data' > /tmp/ado-write-params.json
+   bash scripts/template-manager.sh --action write --params-file /tmp/ado-write-params.json
+   ```
+3. Present the saved template to the user in a readable format:
    - **Title prefix**: Show `pattern` and the extracted slot examples (slots are positional: slot_1, slot_2, etc.)
    - **Work type**: Show `default` and note that inference keywords are pre-configured for all 8 ADO work types
    - **Auto-populate**: Show which fields will be filled from activity sources (e.g., `Custom.Repo`)
@@ -102,17 +110,13 @@ Guide the user through PAT-based persistent auth:
    - **Description format**: Show the Overview + Scope structure
    - **Fields**: Show remaining default field values
    - **Priority** and **tags**
-3. Allow edits. Save the final approved template using `jq` to construct JSON safely:
+4. Ask if the user wants to edit anything. If yes, apply edits using the `update` action (the template already exists on disk, so `update` will succeed):
    ```bash
-   jq -n \
-     --arg area_path "MBScrum\Business Experience\squad-biz-app" \
-     --arg iter_pattern "MBScrum\Sprint {year}-{sprint_number}" \
-     --arg desc_format "## Overview\n{overview}\n\n## Scope\n{scope}" \
-     '{area_path: $area_path, iteration_path_pattern: $iter_pattern, description_format: $desc_format, ...}' \
-     > /tmp/ado-write-params.json
-   bash scripts/template-manager.sh --action write --params-file /tmp/ado-write-params.json
+   # Build a partial JSON with only the fields to change, then update
+   jq -n '{...changed fields...}' > /tmp/ado-update-params.json
+   bash scripts/template-manager.sh --action update --params-file /tmp/ado-update-params.json
    ```
-4. "Template saved. This will be used for all future PBI/Task creation."
+5. "Template saved. This will be used for all future PBI/Task creation."
 
 ## Step 5: User Configuration
 
@@ -154,7 +158,7 @@ Build `data/config.json` from the answers and save it. Use this structure:
 
 ```json
 {
-  "ado": { "...": "..." },
+  "ado": { "organization": "...", "project": "...", "team": "..." },
   "user": {
     "ado_email": "<extracted from reference task>",
     "github_username": "<auto-detected>",
