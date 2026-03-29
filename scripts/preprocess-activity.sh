@@ -91,7 +91,7 @@ printf '%s' "$ACTIVITY" | jq \
 # Extract primary date from an activity item (truncated to YYYY-MM-DD)
 def primary_date:
     (if .type == "github_pr" then
-        .created_at // .updated_at // ""
+        .createdAt // .created_at // .updatedAt // .updated_at // ""
     elif .type == "notion_page" then
         .last_edited // ""
     elif .type == "dev_activity" then
@@ -114,7 +114,7 @@ def find_sprint(date_str):
 # Extract text signals for work type scoring
 def text_signals:
     if .type == "github_pr" then
-        [(.title // ""), (.repo // "")] | map(ascii_downcase) | join(" ")
+        [(.title // ""), (.repository.name // .repo // "")] | map(ascii_downcase) | join(" ")
     elif .type == "notion_page" then
         (.title // "") | ascii_downcase
     elif .type == "dev_activity" then

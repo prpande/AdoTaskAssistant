@@ -42,6 +42,8 @@ bash scripts/ado-cli.sh --action resolve-sprints-for-range --params '{"from":"<f
 
 Execute `prompts/ado-tracker-gather-activity.prompt.md` with the date range.
 
+The gather prompt outputs a **flat JSON array** (not a nested object). All item types are mixed in one array, each with a `type` field. Save this array directly — do not wrap it in an object.
+
 Save combined activity to:
 - Daily: `data/sprints/<primary-sprint>/activity/<date>-daily.json`
 - Adhoc: `data/sprints/<primary-sprint>/activity/<from>-to-<to>-adhoc.json`
@@ -53,18 +55,37 @@ If ALL sources fail → "No activity found. Check tool connections." Stop.
 Run the preprocessing pipeline — zero LLM tokens:
 
 ```bash
-# Step 3a: Enrich activity with sprint mapping, work type scoring, state, group hints
+# Step 3a: Build sprint data safely (backslash-safe via jq --arg)
+# For each sprint, use --arg for path strings, then combine with jq
+jq -n \
+  --arg s1_name "<sprint-1-name>" \
+  --arg s1_path '<sprint-1-iteration-path>' \
+  --arg s1_start "<YYYY-MM-DD>" \
+  --arg s1_end "<YYYY-MM-DD>" \
+  --arg s2_name "<sprint-2-name>" \
+  --arg s2_path '<sprint-2-iteration-path>' \
+  --arg s2_start "<YYYY-MM-DD>" \
+  --arg s2_end "<YYYY-MM-DD>" \
+  '[{name:$s1_name, path:$s1_path, start:$s1_start, end:$s1_end},
+    {name:$s2_name, path:$s2_path, start:$s2_start, end:$s2_end}]' \
+  > /tmp/ado-sprints.json
+
+# Enrich activity with sprint mapping, work type scoring, state, group hints
 bash scripts/build-params.sh --output /tmp/ado-preprocess-params.json \
   --arg activity_file "<path-to-activity-snapshot>" \
-  --argjson sprints '<sprints-json-with-name-path-start-end>'
+  --slurp-file sprints /tmp/ado-sprints.json
 bash scripts/preprocess-activity.sh --params-file /tmp/ado-preprocess-params.json > /tmp/ado-preprocessed.json
 
-# Step 3b: Match against existing ADO items for dedup
+# Step 3b: Build sprint paths array for dedup (also backslash-safe)
+jq '[.[].path]' /tmp/ado-sprints.json > /tmp/ado-sprint-paths.json
+
 bash scripts/build-params.sh --output /tmp/ado-dedup-params.json \
   --arg activity_file "/tmp/ado-preprocessed.json" \
-  --argjson sprints '<sprint-paths-array>'
+  --slurp-file sprints /tmp/ado-sprint-paths.json
 bash scripts/dedup-matcher.sh --params-file /tmp/ado-dedup-params.json > /tmp/ado-matched.json
 ```
+
+**Important:** Never use `--argjson` with inline JSON containing ADO paths (backslashes). Always build path-containing JSON to a file first using `jq --arg`, then use `--slurp-file` to embed it.
 
 Verify both scripts succeeded (check `"success": true` in output). If either fails, show the error and ask whether to continue without preprocessing (fall back to LLM-based analysis) or abort.
 
