@@ -28,6 +28,20 @@ This workspace is an ADO task tracking assistant operated via Claude Code CLI. I
   - `--slurp-file key path`: embed a JSON file under a key (e.g., wrap raw work item JSON)
   - **Never use `echo`, heredocs, or inline `--params`** for JSON containing ADO paths (area paths, iteration paths) — backslashes will be mangled by bash/jq
 - **Shell escaping rule:** Both `ado-cli.sh` and `template-manager.sh` support `--params-file <path>` as an alternative to `--params '<json>'`. Use `--params` only for simple JSON without backslashes (e.g., `--params '{"id":1234}'`). For anything with ADO paths, use `build-params.sh` + `--params-file`.
+
+## Backslash Escaping — Root Cause & Rules
+Claude Code's Bash tool transmits command strings as JSON parameters. JSON string encoding converts every `\\` to `\` during deserialization. This means **any `\\` you write in a Bash command arrives in bash as a single `\`**. This is not a bug — it's standard JSON encoding.
+
+**Consequences:**
+- `echo '{"path": "MBScrum\\Sprint"}' > file.json` → file contains `MBScrum\Sprint` → **invalid JSON** (`\S` is not a valid JSON escape)
+- Heredocs with `\\` in JSON values → same corruption
+- `jq --arg p 'MBScrum\Sprint'` → jq receives single `\` → correctly outputs `MBScrum\\Sprint` in JSON → **safe**
+
+**Rules (non-negotiable):**
+1. **Never write JSON containing ADO paths via `echo`, `cat <<`, or inline strings** — the `\\` will be halved, producing invalid JSON
+2. **Always use `jq --arg`** (via `build-params.sh`) to inject backslash-containing values into JSON — jq receives the correct single-backslash value and handles JSON encoding itself
+3. **To save az CLI JSON output to a file**, pipe it: `az boards ... | jq '.data' > file.json` — never capture in a variable and echo it back
+4. **In jq filters inside script files** (on disk, not in Bash tool commands), `split("\\")` splits by one backslash. Use exactly `\\` (2 backslashes) per literal backslash in jq string literals within .sh files.
 - **Activity preprocessing:** `bash scripts/preprocess-activity.sh --params-file <file>`
   - Enriches gathered activity with sprint mapping, work type scoring, state assignment, branch group hints
   - All operations are deterministic jq/bash — no LLM tokens consumed
