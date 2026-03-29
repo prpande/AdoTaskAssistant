@@ -181,8 +181,8 @@ extract_template() {
         iteration_path_pattern: (
           .fields["System.IterationPath"]
           | if . then
-              (split("\\\\") | last | gsub("[0-9]{4}"; "{year}") | gsub("\\{year\\}-[0-9]+"; "{year}-{sprint_number}")) as $last_part |
-              (split("\\\\") | .[:-1] + [$last_part] | join("\\"))
+              (split("\\") | last | gsub("[0-9]{4}"; "{year}") | gsub("\\{year\\}-[0-9]+"; "{year}-{sprint_number}")) as $last_part |
+              (split("\\") | .[:-1] + [$last_part] | join("\\"))
             else null end
         ),
         title_prefix: $title_prefix,
