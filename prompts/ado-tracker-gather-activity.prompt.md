@@ -40,7 +40,7 @@ Collect activity from GitHub, Notion, and Git for a date range in a single pass.
 6. Search Notion using **workspace search** (not AI search) for precise user filtering:
    ```
    notion-search:
-     query: ""
+     query: " "
      query_type: "internal"
      content_search_mode: "workspace_search"
      filters:
