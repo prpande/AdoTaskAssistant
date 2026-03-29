@@ -42,6 +42,8 @@ bash scripts/ado-cli.sh --action resolve-sprints-for-range --params '{"from":"<f
 
 Execute `prompts/ado-tracker-gather-activity.prompt.md` with the date range.
 
+The gather prompt outputs a **flat JSON array** (not a nested object). All item types are mixed in one array, each with a `type` field. Save this array directly — do not wrap it in an object.
+
 Save combined activity to:
 - Daily: `data/sprints/<primary-sprint>/activity/<date>-daily.json`
 - Adhoc: `data/sprints/<primary-sprint>/activity/<from>-to-<to>-adhoc.json`

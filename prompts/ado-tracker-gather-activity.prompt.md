@@ -74,4 +74,21 @@ Collect activity from GitHub, Notion, and Git for a date range in a single pass.
 13. Report collection summary: "Found X PRs, Y Notion pages, Z repos with commits." Note any skipped sources.
 
 ## Output
-Combined JSON array of all activity objects.
+A flat JSON array saved to the activity file path. Each item MUST have a top-level `type` field.
+
+**GitHub PR items:**
+```json
+{"type": "github_pr", "title": "...", "url": "https://github.com/org/repo/pull/N", "number": N, "repository": {"name": "...", "nameWithOwner": "..."}, "state": "open|merged|closed", "createdAt": "ISO8601", "updatedAt": "ISO8601", "role": "author|reviewer|author+reviewer"}
+```
+
+**Notion page items:**
+```json
+{"type": "notion_page", "title": "...", "url": "https://notion.so/...", "last_edited": "ISO8601"}
+```
+
+**Dev activity items (one per repo):**
+```json
+{"type": "dev_activity", "repo": "RepoName", "commit_count": N, "commits": [{"hash": "...", "subject": "...", "date": "YYYY-MM-DD HH:MM:SS +TZ"}]}
+```
+
+After combining, report: "Found X PRs, Y Notion pages, Z repos with commits." Note any skipped sources.
