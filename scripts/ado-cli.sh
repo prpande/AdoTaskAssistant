@@ -44,6 +44,68 @@ load_config
 
 # --- Helpers ---
 
+# Convert markdown-style description to HTML for ADO rendering.
+# Handles: ## headings, - bullet lists, **bold**, `code`, [links](url), newlines.
+# Input is read from stdin or passed as $1. Already-HTML input (starts with <) is passed through.
+md_to_html() {
+    local input="${1:-$(cat)}"
+    # Pass through if already HTML
+    if [[ "$input" == \<* ]]; then
+        printf '%s' "$input"
+        return
+    fi
+    printf '%s' "$input" | awk '
+    BEGIN { in_list = 0 }
+    {
+        line = $0
+
+        # Close list if current line is not a bullet
+        if (in_list && line !~ /^[[:space:]]*-[[:space:]]/) {
+            printf "</ul>"
+            in_list = 0
+        }
+
+        # Headings: ## Heading
+        if (match(line, /^#{1,6}[[:space:]]+/)) {
+            n = RLENGTH - 1  # count #s (subtract the space)
+            for (i = 1; i <= length(line); i++) {
+                if (substr(line, i, 1) != "#") break
+            }
+            n = i - 1
+            text = substr(line, RLENGTH + 1)
+            printf "<h%d>%s</h%d>", n, text, n
+            next
+        }
+
+        # Bullet items: - item
+        if (line ~ /^[[:space:]]*-[[:space:]]/) {
+            if (!in_list) {
+                printf "<ul>"
+                in_list = 1
+            }
+            sub(/^[[:space:]]*-[[:space:]]/, "", line)
+            printf "<li>%s</li>", line
+            next
+        }
+
+        # Empty line
+        if (line ~ /^[[:space:]]*$/) {
+            printf "<br>"
+            next
+        }
+
+        # Regular text
+        printf "<div>%s</div>", line
+    }
+    END {
+        if (in_list) printf "</ul>"
+    }
+    ' | sed \
+        -e 's/\*\*\([^*]*\)\*\*/<b>\1<\/b>/g' \
+        -e 's/`\([^`]*\)`/<code>\1<\/code>/g' \
+        -e 's/\[\([^]]*\)\](\([^)]*\))/<a href="\2">\1<\/a>/g'
+}
+
 json_ok() {
     # Strip non-JSON lines (e.g., az CLI warnings) before parsing
     printf '%s' "$1" | grep -v '^WARNING:' | jq '{success: true, data: .}'
@@ -125,6 +187,7 @@ create_work_item() {
     area_path=$(optional_param "area_path")
     iteration_path=$(optional_param "iteration_path")
     description=$(optional_param "description")
+    if [[ -n "$description" ]]; then description=$(md_to_html "$description"); fi
     assigned_to=$(optional_param "assigned_to")
     state=$(optional_param "state")
 
@@ -140,12 +203,18 @@ create_work_item() {
     fi
 
     # Collect --fields args
+    # Note: Task work items cannot have state set at creation time — defer to follow-up update
+    local deferred_state=""
     local field_args=()
     if [[ -n "$assigned_to" ]]; then
         field_args+=("System.AssignedTo=$assigned_to")
     fi
     if [[ -n "$state" ]]; then
-        field_args+=("System.State=$state")
+        if [[ "$type" == "Task" ]]; then
+            deferred_state="$state"
+        else
+            field_args+=("System.State=$state")
+        fi
     fi
 
     # Additional fields from params
@@ -166,6 +235,19 @@ create_work_item() {
         json_error "$result" "$ACTION"
         exit 1
     }
+
+    # Update state for Tasks via follow-up call
+    if [[ -n "$deferred_state" && "$deferred_state" != "To Do" ]]; then
+        local work_item_id
+        work_item_id=$(printf '%s' "$result" | grep -v '^WARNING:' | jq -r '.id')
+        local state_result
+        state_result=$(az boards work-item update --id "$work_item_id" --fields "System.State=$deferred_state" --output json 2>&1) || {
+            json_error "Work item $work_item_id created but failed to set state to $deferred_state: $state_result" "$ACTION"
+            exit 1
+        }
+        result="$state_result"
+    fi
+
     json_ok "$result"
 }
 
@@ -397,6 +479,7 @@ create_task() {
     area_path=$(optional_param "area_path")
     iteration_path=$(optional_param "iteration_path")
     description=$(optional_param "description")
+    if [[ -n "$description" ]]; then description=$(md_to_html "$description"); fi
     assigned_to=$(optional_param "assigned_to")
     if [[ -z "$assigned_to" && -n "$ADO_EMAIL" ]]; then
         assigned_to="$ADO_EMAIL"
@@ -419,9 +502,8 @@ create_task() {
     if [[ -n "$assigned_to" ]]; then
         field_args+=("System.AssignedTo=$assigned_to")
     fi
-    if [[ -n "$state" ]]; then
-        field_args+=("System.State=$state")
-    fi
+    # Note: State cannot be set at creation time for Tasks — az CLI rejects it.
+    # We create first, then update state in a follow-up call.
 
     if [[ ${#field_args[@]} -gt 0 ]]; then
         cmd_args+=(--fields "${field_args[@]}")
@@ -443,6 +525,16 @@ create_task() {
         exit 1
     }
 
+    # Update state if requested (must be done after creation)
+    if [[ -n "$state" && "$state" != "To Do" ]]; then
+        local state_result
+        state_result=$(az boards work-item update --id "$task_id" --fields "System.State=$state" --output json 2>&1) || {
+            json_error "Task $task_id created and linked but failed to set state to $state: $state_result" "$ACTION"
+            exit 1
+        }
+        task_result="$state_result"
+    fi
+
     printf '%s' "$task_result" | jq --argjson parent "$parent_id" '{success: true, data: {task: ., parent_id: $parent}}'
 }
 
@@ -461,6 +553,7 @@ create_with_children() {
     pbi_area=$(printf '%s' "$pbi_json" | jq -r '.area_path // empty')
     pbi_iteration=$(printf '%s' "$pbi_json" | jq -r '.iteration_path // empty')
     pbi_description=$(printf '%s' "$pbi_json" | jq -r '.description // empty')
+    if [[ -n "$pbi_description" ]]; then pbi_description=$(md_to_html "$pbi_description"); fi
     pbi_assigned=$(printf '%s' "$pbi_json" | jq -r '.assigned_to // empty')
     pbi_state=$(printf '%s' "$pbi_json" | jq -r '.state // empty')
     if [[ -z "$pbi_assigned" && -n "$ADO_EMAIL" ]]; then
@@ -523,6 +616,7 @@ create_with_children() {
         local t_title t_description t_assigned t_state t_area t_iteration
         t_title=$(printf '%s' "$task" | jq -r '.title')
         t_description=$(printf '%s' "$task" | jq -r '.description // empty')
+        if [[ -n "$t_description" ]]; then t_description=$(md_to_html "$t_description"); fi
         t_assigned=$(printf '%s' "$task" | jq -r '.assigned_to // empty')
         t_state=$(printf '%s' "$task" | jq -r '.state // empty')
         t_area=$(printf '%s' "$task" | jq -r '.area_path // empty')
@@ -540,7 +634,7 @@ create_with_children() {
 
         local t_field_args=()
         if [[ -n "$t_assigned" ]]; then t_field_args+=("System.AssignedTo=$t_assigned"); fi
-        if [[ -n "$t_state" ]]; then t_field_args+=("System.State=$t_state"); fi
+        # Note: State cannot be set at creation time for Tasks — set via follow-up update
         if [[ ${#t_field_args[@]} -gt 0 ]]; then t_cmd_args+=(--fields "${t_field_args[@]}"); fi
 
         local t_result
@@ -557,6 +651,15 @@ create_with_children() {
         az boards work-item relation add --id "$t_id" --relation-type parent --target-id "$pbi_id" --output json >/dev/null 2>&1 || {
             errors=$(printf '%s' "$errors" | jq --arg title "$t_title" --argjson id "$t_id" '. + [{"title": $title, "task_id": $id, "error": "created but failed to link to parent"}]')
         }
+
+        # Update state if requested (must be done after creation)
+        if [[ -n "$t_state" && "$t_state" != "To Do" ]]; then
+            local t_state_result
+            t_state_result=$(az boards work-item update --id "$t_id" --fields "System.State=$t_state" --output json 2>&1)
+            if [[ $? -ne 0 ]]; then
+                errors=$(printf '%s' "$errors" | jq --arg title "$t_title" --argjson id "$t_id" --arg err "$t_state_result" '. + [{"title": $title, "task_id": $id, "error": ("created but failed to set state: " + $err)}]')
+            fi
+        fi
 
         task_ids=$(printf '%s' "$task_ids" | jq --argjson id "$t_id" '. + [$id]')
     done
