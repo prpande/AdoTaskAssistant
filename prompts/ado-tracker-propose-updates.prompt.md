@@ -40,6 +40,16 @@ For items with `"dedup.status": "new"`, group into proposed PBIs:
 
 Each group becomes one proposed PBI with child tasks.
 
+### Deduplicate dev_activity against PRs within a group
+
+Before creating child tasks, check whether a `dev_activity` item's commits are already covered by a `github_pr` in the same group. A `dev_activity` item is covered if:
+- The PR's repository matches the `dev_activity` repo, OR
+- The `dev_activity` branch matches the PR's branch
+
+When a `dev_activity` item is covered by a PR, **do not create a separate task for it**. Instead, fold the commit details (count, branch) into the PR task's description as supporting context. The PR is the task — the commits are its implementation detail.
+
+Only create a standalone task for `dev_activity` items that have **no corresponding PR** in the group (e.g., commits pushed directly to main without a PR).
+
 ### Write titles and descriptions
 
 **Title**: Read `title_prefix.pattern` and `title_prefix.slots` from template.
