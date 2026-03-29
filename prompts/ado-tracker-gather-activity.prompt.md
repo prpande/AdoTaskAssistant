@@ -37,18 +37,24 @@ Collect activity from GitHub, Notion, and Git for a date range in a single pass.
 
 ### Notion Activity
 
-6. Search Notion with the stored user ID:
+6. Search Notion using **workspace search** (not AI search) for precise user filtering:
    ```
    notion-search:
-     query: "*"
+     query: ""
+     query_type: "internal"
+     content_search_mode: "workspace_search"
      filters:
        created_date_range: {start_date: <from_date>, end_date: <to_date + 1 day>}
        created_by_user_ids: [<user.notion_user_id>]
      page_size: 25
-     max_highlight_length: 50
+     max_highlight_length: 0
    ```
+   **Important:** Always set `content_search_mode: "workspace_search"`. Do NOT use AI search — it returns results from connected sources (Slack, SharePoint, Google Drive) and includes pages the user merely viewed, not authored.
 
-7. Filter results: only include `type` in `notion.filter_types` (default: `["page"]`). Drop Slack, SharePoint, connector results. Exclude databases in `notion.excluded_databases`.
+7. **Filter and verify authorship** for each result:
+   a. Drop any result whose `type` is not `"notion"` or not in `notion.filter_types` (default: `["page"]`). Drop all connected-source results (types like `"slack"`, `"sharepoint"`, `"google_drive"`, etc.) — these are never valid activity items.
+   b. Exclude databases in `notion.excluded_databases`.
+   c. **Post-filter (required):** For each remaining page, fetch it using `notion-fetch` with the page URL/ID. Check the page metadata for `created_by` and `last_edited_by` user IDs. Only include the page if `user.notion_user_id` matches either field. This step is mandatory — search filters are best-effort and may return unrelated pages.
 
 8. If Notion collection fails, note "Notion scan skipped — <error>" and continue.
 
@@ -59,6 +65,7 @@ Collect activity from GitHub, Notion, and Git for a date range in a single pass.
    bash scripts/extract-git-activity.sh --from <from_date> --to <to_date> --auto-detect "<git.source_root>" --filter-org "<git.filter_by_remote_org>"
    ```
    If `git.explicit_repos` is non-empty, also pass `--repos '<json-array>'`.
+   The script returns `{success, data: {repos: [...], ...}}`. Each repo entry includes `date_range` and `branch` — **preserve both** when building `dev_activity` output items.
 
 10. Parse session logs (best-effort):
     ```bash
@@ -88,7 +95,9 @@ A flat JSON array saved to the activity file path. Each item MUST have a top-lev
 
 **Dev activity items (one per repo):**
 ```json
-{"type": "dev_activity", "repo": "RepoName", "commit_count": N, "commits": [{"hash": "...", "subject": "...", "date": "YYYY-MM-DD HH:MM:SS +TZ"}]}
+{"type": "dev_activity", "repo": "RepoName", "commit_count": N, "date_range": "YYYY-MM-DD to YYYY-MM-DD", "branch": "branch-name", "commits": [{"hash": "...", "subject": "...", "date": "YYYY-MM-DD HH:MM:SS +TZ"}]}
 ```
+- `date_range`: **Required.** The earliest and latest commit dates in `"YYYY-MM-DD to YYYY-MM-DD"` format. Used by `preprocess-activity.sh` for sprint mapping — without it, items may be assigned to the wrong sprint.
+- `branch`: **Required if available.** The primary branch name from the commits (e.g., from `git log --format=%D` or the most common non-main branch). Used by `preprocess-activity.sh` for cross-repo grouping hints. Set to `null` only if branch cannot be determined.
 
 After combining, report: "Found X PRs, Y Notion pages, Z repos with commits." Note any skipped sources.

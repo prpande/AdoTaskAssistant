@@ -107,9 +107,28 @@ for repo in "${repo_list[@]}"; do
         --format='{"hash":"%H","short_hash":"%h","subject":"%s","date":"%ai","author":"%an"}' \
         2>/dev/null | jq -s --arg repo "$repo_name" --arg repo_path "$repo" '[.[] | . + {"repo": $repo, "repo_path": $repo_path}]')
 
+    # Detect the primary branch (most common non-main/master branch across commits)
+    repo_branch=$(git -C "$repo" log \
+        --after="$FROM_DATE" \
+        --before="$TO_DATE" \
+        --author="$GIT_USER_EMAIL" \
+        --format='%D' \
+        2>/dev/null | tr ',' '\n' | sed 's/^ *//' | grep -v '^$' | grep -v 'HEAD' | grep -v 'origin/main' | grep -v 'origin/master' | grep -v 'main$' | grep -v 'master$' | sed 's|^origin/||' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}' 2>/dev/null || echo "")
+    # Fallback: check current branch of the repo if no decorated commits found
+    if [[ -z "$repo_branch" ]]; then
+        repo_branch=$(git -C "$repo" branch --show-current 2>/dev/null || echo "")
+        # Don't report main/master as a branch hint
+        if [[ "$repo_branch" == "main" || "$repo_branch" == "master" ]]; then
+            repo_branch=""
+        fi
+    fi
+
     if [[ -z "$commits_json" || "$commits_json" == "null" || "$commits_json" == "[]" ]]; then
         continue
     fi
+
+    # Tag each commit with branch hint for this repo
+    commits_json=$(printf '%s' "$commits_json" | jq --arg branch "$repo_branch" '[.[] | . + {"_branch": $branch}]')
 
     all_commits=$(printf '%s\n%s' "$all_commits" "$commits_json" | jq -s '.[0] + .[1]')
 done
@@ -121,6 +140,8 @@ summary=$(printf '%s' "$all_commits" | jq '{
     repos: (group_by(.repo) | map({
         repo: .[0].repo,
         commit_count: length,
+        date_range: (([.[].date[:10]] | sort) as $dates | ($dates | first) + " to " + ($dates | last)),
+        branch: (.[0]._branch // null | if . == "" then null else . end),
         commits: [.[] | {hash: .short_hash, subject: .subject, date: .date}]
     })),
     date_range: {from: "'"$FROM_DATE"'", to: "'"$TO_DATE"'"}
