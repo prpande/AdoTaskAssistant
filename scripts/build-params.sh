@@ -107,7 +107,7 @@ JQ_FILTER="{ $(IFS=','; echo "${filter_parts[*]}") }"
 
 # --- Execute ---
 
-jq -n "${JQ_ARGS[@]}" "$JQ_FILTER" > "$OUTPUT_FILE" 2>&1
+jq -n "${JQ_ARGS[@]}" "$JQ_FILTER" > "$OUTPUT_FILE"
 rc=$?
 
 if [[ $rc -ne 0 ]]; then
