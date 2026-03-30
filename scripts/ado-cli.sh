@@ -111,6 +111,19 @@ json_ok() {
     printf '%s' "$1" | grep -v '^WARNING:' | jq '{success: true, data: .}'
 }
 
+# Map any work-item state to a valid Task state.
+# ADO Tasks only support: To Do, In Progress, Done, Removed.
+# PBI states (New, Approved, Committed) are mapped to the closest Task equivalent.
+map_task_state() {
+    local state="$1"
+    case "$state" in
+        "To Do"|"In Progress"|"Done"|"Removed") printf '%s' "$state" ;;
+        "New"|"Approved")                        printf '%s' "To Do" ;;
+        "Committed")                             printf '%s' "In Progress" ;;
+        *)                                       printf '%s' "$state" ;;
+    esac
+}
+
 json_error() {
     local msg="$1"
     local action="$2"
@@ -211,7 +224,7 @@ create_work_item() {
     fi
     if [[ -n "$state" ]]; then
         if [[ "$type" == "Task" ]]; then
-            deferred_state="$state"
+            deferred_state=$(map_task_state "$state")
         else
             field_args+=("System.State=$state")
         fi
@@ -223,7 +236,7 @@ create_work_item() {
     if [[ -n "$fields_json" && "$fields_json" != "null" ]]; then
         while IFS= read -r entry; do
             field_args+=("$entry")
-        done < <(printf '%s' "$fields_json" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
+        done < <(printf '%s' "$fields_json" | jq -r 'to_entries[] | "\(.key)=\(.value)"' | tr -d '\r')
     fi
 
     if [[ ${#field_args[@]} -gt 0 ]]; then
@@ -280,7 +293,7 @@ update_work_item() {
     if [[ -n "$fields_json" && "$fields_json" != "null" ]]; then
         while IFS= read -r entry; do
             field_args+=("$entry")
-        done < <(printf '%s' "$fields_json" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
+        done < <(printf '%s' "$fields_json" | jq -r 'to_entries[] | "\(.key)=\(.value)"' | tr -d '\r')
     fi
 
     if [[ ${#field_args[@]} -gt 0 ]]; then
@@ -526,6 +539,8 @@ create_task() {
     }
 
     # Update state if requested (must be done after creation)
+    # Map PBI states to valid Task states before applying
+    if [[ -n "$state" ]]; then state=$(map_task_state "$state"); fi
     if [[ -n "$state" && "$state" != "To Do" ]]; then
         local state_result
         state_result=$(az boards work-item update --id "$task_id" --fields "System.State=$state" --output json 2>&1) || {
@@ -586,7 +601,7 @@ create_with_children() {
     if [[ -n "$pbi_fields_json" && "$pbi_fields_json" != "null" ]]; then
         while IFS= read -r entry; do
             pbi_field_args+=("$entry")
-        done < <(printf '%s' "$pbi_fields_json" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
+        done < <(printf '%s' "$pbi_fields_json" | jq -r 'to_entries[] | "\(.key)=\(.value)"' | tr -d '\r')
     fi
     if [[ ${#pbi_field_args[@]} -gt 0 ]]; then
         pbi_cmd_args+=(--fields "${pbi_field_args[@]}")
@@ -653,6 +668,8 @@ create_with_children() {
         }
 
         # Update state if requested (must be done after creation)
+        # Map PBI states to valid Task states before applying
+        if [[ -n "$t_state" ]]; then t_state=$(map_task_state "$t_state"); fi
         if [[ -n "$t_state" && "$t_state" != "To Do" ]]; then
             local t_state_result
             t_state_result=$(az boards work-item update --id "$t_id" --fields "System.State=$t_state" --output json 2>&1)
