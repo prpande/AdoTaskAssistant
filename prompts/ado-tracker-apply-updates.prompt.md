@@ -18,6 +18,8 @@ Execute user-approved ADO changes — create PBIs with children, update states.
 
    **create** — Use `ado-cli.sh --action create-with-children`. Build params with `build-params.sh` using `--argjson pbi` and `--argjson tasks`. Construct PBI and task objects with `jq -n --arg` to handle backslash escaping in area/iteration paths.
 
+   **add-task** — Use `ado-cli.sh --action create-task` with `build-params.sh`. The `parent_id` from the approved action is the existing PBI to link under. Build task params with area/iteration inherited from the parent PBI.
+
    **create-task** — Use `ado-cli.sh --action create-task` with `build-params.sh`.
 
    **update-state** — Use `ado-cli.sh --action update-work-item --params '{"id": <id>, "state": "<state>"}'` (no backslash risk, inline is safe).

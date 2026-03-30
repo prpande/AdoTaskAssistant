@@ -24,7 +24,7 @@ Review pre-computed activity data, apply judgment for grouping and titles, and p
 ### Review preprocessed inferences
 
 Use the script's inferences as starting points. Override when your judgment says otherwise:
-- **Dedup**: Items with `"status": "tracked"` (exact URL match) are definitive — skip them. Items with `"status": "potential_match"` need your review — check the source URLs, titles, and broader context to decide if they're truly duplicates or separate work.
+- **Dedup**: Items with `"status": "tracked"` (exact URL match) are definitive — skip them. Items with `"status": "potential_match"` need your review — check the source URLs, titles, and broader context to decide if they're truly duplicates or separate work. Items with `"status": "related"` are new work that belongs under an existing tracked PBI — propose them as **child tasks** under that PBI (see "Add tasks to existing PBIs" below).
 - **Work type**: If `work_type_confidence` < 0.5, flag to the user for confirmation. If the broader context contradicts the keyword score (e.g., "fix" keyword but actually a new feature), override.
 - **State**: The script's state assignment is deterministic and correct. Only override if you have specific context (e.g., a mixed-source group should use the most active state).
 
@@ -39,6 +39,12 @@ For items with `"dedup.status": "new"`, group into proposed PBIs:
 5. **Single-item groups** — standalone items become their own PBI
 
 Each group becomes one proposed PBI with child tasks.
+
+### Add tasks to existing PBIs
+
+Items with `"dedup.status": "related"` are new activity that belongs under an already-tracked PBI. Do NOT create a new PBI for them. Instead, propose them as child tasks under the referenced `dedup.work_item_id`. Present these in the proposal under a **"New Tasks for Existing PBIs"** section showing the parent PBI and the proposed child tasks.
+
+Use the `"add-task"` action type in the output for these items.
 
 ### Deduplicate dev_activity against PRs within a group
 
@@ -108,6 +114,11 @@ JSON array of approved actions:
     "sprint_path": "MBScrum\\Sprint 2026-07",
     "pbi": {"title": "...", "description": "...", "state": "Committed", "assigned_to": "...", "work_type": "...", "fields": {}},
     "tasks": [{"title": "...", "state": "Done", "description": "..."}]
+  },
+  {
+    "action": "add-task",
+    "parent_id": 12345,
+    "task": {"title": "...", "state": "Done", "description": "...", "assigned_to": "..."}
   },
   {
     "action": "update-state",
