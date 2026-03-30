@@ -105,9 +105,9 @@ def extract_urls:
     else
         [
             # GitHub PR URLs
-            match("https://github\\.com/[^/]+/[^/]+/pull/[0-9]+"; "g") | .string,
+            (match("https://github[.]com/[^/]+/[^/]+/pull/[0-9]+"; "g") | .string),
             # Notion page URLs (with or without www)
-            match("https://(www\\.)?notion\\.so/[a-zA-Z0-9_-]+"; "g") | .string
+            (match("https://(www[.])?notion[.]so/[a-zA-Z0-9_-]+"; "g") | .string)
         ]
     end;
 
@@ -117,7 +117,6 @@ def extract_urls:
 # -------------------------------------------------------
 def normalize_title:
     ascii_downcase
-    | gsub("[\\[\\](){}]"; " ")
     | gsub("[^a-z0-9 ]"; " ")
     | split(" ")
     | map(select(length > 0));
@@ -213,7 +212,7 @@ def state_update:
     end;
 
 # -------------------------------------------------------
-# Main: process each activity item
+# Pass 1: Match each activity item against existing ADO items
 # -------------------------------------------------------
 {
     success: true,
@@ -269,6 +268,61 @@ def state_update:
         end
     ]
 }
+
+# -------------------------------------------------------
+# Pass 2: Cross-correlate "new" items with PBIs matched by "tracked" items.
+# If a new item has moderate title similarity with a tracked PBI, mark it
+# as "related" so the proposal layer adds it as a child task, not a new PBI.
+# -------------------------------------------------------
+| (
+    # Collect unique PBI IDs and their titles from tracked items
+    [
+        .items[] |
+        select(.dedup.status == "tracked") |
+        .dedup.work_item_id as $pbi_id |
+        {
+            work_item_id: $pbi_id,
+            title: (
+                [$title_entries[] | select(.work_item_id == $pbi_id)] | first // null
+            )
+        }
+    ] | unique_by(.work_item_id) |
+    map(select(.title != null) | { work_item_id, title: .title.title, words: .title.words })
+) as $tracked_pbis |
+
+if ($tracked_pbis | length) == 0 then .
+else
+    .items |= [
+        .[] |
+        if .dedup.status == "new" then
+            (. | source_title | normalize_title) as $item_words |
+            if ($item_words | length) == 0 then .
+            else
+                (
+                    [
+                        $tracked_pbis[] |
+                        . as $pbi |
+                        jaccard($item_words; $pbi.words) as $sim |
+                        select($sim >= 0.35) |
+                        { work_item_id: $pbi.work_item_id, existing_title: $pbi.title, similarity: $sim }
+                    ] | sort_by(-.similarity) | first // null
+                ) as $related |
+                if $related != null then
+                    . + {
+                        dedup: {
+                            status: "related",
+                            work_item_id: $related.work_item_id,
+                            existing_title: $related.existing_title,
+                            similarity: $related.similarity
+                        }
+                    }
+                else .
+                end
+            end
+        else .
+        end
+    ]
+end
 '
 
 rc=$?
