@@ -20,6 +20,16 @@
 
 set -o pipefail
 
+# Force UTF-8 for az CLI on Windows.
+# Without this, az uses the console codepage (cp1252 on en-US Windows), which:
+#   1. Emits "WARNING: Unable to encode the output with cp1252 encoding. Unsupported
+#      characters are discarded." on stderr — corrupts JSON parsing when stderr is
+#      merged into stdout.
+#   2. Silently strips non-ASCII characters (em-dashes, arrows, etc.) from titles
+#      and descriptions passed as CLI args.
+export PYTHONIOENCODING=utf-8
+export PYTHONUTF8=1
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="$REPO_DIR/data/config.json"
@@ -128,6 +138,39 @@ json_error() {
     local msg="$1"
     local action="$2"
     jq -n --arg msg "$msg" --arg action "$action" '{"success":false,"error":$msg,"action":$action}'
+}
+
+# Run an az command, capturing stdout and stderr separately.
+# - On success: prints stdout. If stderr was non-empty, echoes a diagnostic on our
+#   stderr (non-fatal) so callers can audit warnings without corrupting JSON.
+# - On failure: prints a combined diagnostic (rc + stderr) on our stderr and returns
+#   the command's exit code. Caller should handle with `|| { ... }`.
+# Usage: result=$(az_capture az boards work-item create ...) || return/exit
+az_capture() {
+    local stderr_file stdout rc stderr
+    stderr_file=$(mktemp)
+    stdout=$("$@" 2>"$stderr_file")
+    rc=$?
+    stderr=$(<"$stderr_file")
+    rm -f "$stderr_file"
+    if [[ $rc -ne 0 ]]; then
+        printf 'az command failed (rc=%d): %s\n' "$rc" "$stderr" >&2
+        return $rc
+    fi
+    if [[ -n "$stderr" ]]; then
+        printf 'az stderr (non-fatal): %s\n' "$stderr" >&2
+    fi
+    printf '%s' "$stdout"
+}
+
+# Parse a work-item id from az JSON output.
+# Prints the id on success. Prints empty string on failure.
+# Callers MUST validate the result themselves — do not wrap this in $( ) and then
+# call exit, because exit inside a command substitution only terminates the
+# subshell, not the caller. That was the exact silent-failure mode we are fixing.
+parse_work_item_id() {
+    local raw="$1"
+    printf '%s' "$raw" | jq -r '.id // empty' 2>/dev/null
 }
 
 require_param() {
@@ -523,18 +566,21 @@ create_task() {
     fi
 
     local task_result
-    task_result=$("${cmd_args[@]}" 2>&1) || {
-        json_error "$task_result" "$ACTION"
+    task_result=$(az_capture "${cmd_args[@]}") || {
+        json_error "Task creation failed for '$title' (parent $parent_id)" "$ACTION"
         exit 1
     }
 
     local task_id
-    task_id=$(printf '%s' "$task_result" | jq -r '.id')
+    task_id=$(parse_work_item_id "$task_result")
+    if [[ ! "$task_id" =~ ^[0-9]+$ ]]; then
+        json_error "Expected numeric task id from az. Raw output: $task_result" "$ACTION"
+        exit 1
+    fi
 
-    # Link to parent
-    local link_result
-    link_result=$(az boards work-item relation add --id "$task_id" --relation-type parent --target-id "$parent_id" --output json 2>&1) || {
-        json_error "Task $task_id created but failed to link to parent $parent_id: $link_result" "$ACTION"
+    # Link to parent (fail loudly — an unlinked task is worse than no task)
+    az_capture az boards work-item relation add --id "$task_id" --relation-type parent --target-id "$parent_id" --output json >/dev/null || {
+        json_error "Task $task_id created but failed to link to parent $parent_id" "$ACTION"
         exit 1
     }
 
@@ -543,8 +589,8 @@ create_task() {
     if [[ -n "$state" ]]; then state=$(map_task_state "$state"); fi
     if [[ -n "$state" && "$state" != "To Do" ]]; then
         local state_result
-        state_result=$(az boards work-item update --id "$task_id" --fields "System.State=$state" --output json 2>&1) || {
-            json_error "Task $task_id created and linked but failed to set state to $state: $state_result" "$ACTION"
+        state_result=$(az_capture az boards work-item update --id "$task_id" --fields "System.State=$state" --output json) || {
+            json_error "Task $task_id created and linked but failed to set state to $state" "$ACTION"
             exit 1
         }
         task_result="$state_result"
@@ -608,13 +654,21 @@ create_with_children() {
     fi
 
     local pbi_result
-    pbi_result=$("${pbi_cmd_args[@]}" 2>&1) || {
-        json_error "Failed to create PBI: $pbi_result" "$ACTION"
+    pbi_result=$(az_capture "${pbi_cmd_args[@]}") || {
+        json_error "Failed to create PBI: $pbi_title" "$ACTION"
         exit 1
     }
 
+    # Fail-fast on non-numeric id. Previously an empty id silently propagated,
+    # orphaning child tasks and (with caller-level retries) creating duplicate PBIs.
+    # Note: validation must happen in this function's scope, not a subshell —
+    # `exit 1` inside `$(...)` only terminates the substitution, not the script.
     local pbi_id
-    pbi_id=$(printf '%s' "$pbi_result" | jq -r '.id')
+    pbi_id=$(parse_work_item_id "$pbi_result")
+    if [[ ! "$pbi_id" =~ ^[0-9]+$ ]]; then
+        json_error "Expected numeric PBI id from az (title: $pbi_title). Raw output: $pbi_result" "$ACTION"
+        exit 1
+    fi
 
     # Create child tasks
     local tasks_json
@@ -653,29 +707,36 @@ create_with_children() {
         if [[ ${#t_field_args[@]} -gt 0 ]]; then t_cmd_args+=(--fields "${t_field_args[@]}"); fi
 
         local t_result
-        t_result=$("${t_cmd_args[@]}" 2>&1)
-        if [[ $? -ne 0 ]]; then
-            errors=$(printf '%s' "$errors" | jq --arg title "$t_title" --arg err "$t_result" '. + [{"title": $title, "error": $err}]')
+        t_result=$(az_capture "${t_cmd_args[@]}") || {
+            errors=$(printf '%s' "$errors" | jq --arg title "$t_title" --arg err "task creation failed" '. + [{"title": $title, "error": $err}]')
+            continue
+        }
+
+        # Validate id before proceeding. Empty id would cause --target-id '' in the
+        # next call, which az accepts but silently leaves the task orphaned.
+        local t_id
+        t_id=$(printf '%s' "$t_result" | jq -r '.id // empty' 2>/dev/null)
+        if [[ ! "$t_id" =~ ^[0-9]+$ ]]; then
+            errors=$(printf '%s' "$errors" | jq --arg title "$t_title" --arg raw "$t_result" '. + [{"title": $title, "error": ("non-numeric task id in az output: " + $raw)}]')
             continue
         fi
 
-        local t_id
-        t_id=$(printf '%s' "$t_result" | jq -r '.id')
-
-        # Link to parent
-        az boards work-item relation add --id "$t_id" --relation-type parent --target-id "$pbi_id" --output json >/dev/null 2>&1 || {
+        # Link to parent. Track success explicitly so we skip the state update on
+        # failure (an orphaned task with a state change is worse than one without).
+        local link_ok=1
+        az_capture az boards work-item relation add --id "$t_id" --relation-type parent --target-id "$pbi_id" --output json >/dev/null || {
             errors=$(printf '%s' "$errors" | jq --arg title "$t_title" --argjson id "$t_id" '. + [{"title": $title, "task_id": $id, "error": "created but failed to link to parent"}]')
+            link_ok=0
         }
 
-        # Update state if requested (must be done after creation)
-        # Map PBI states to valid Task states before applying
+        # Update state if requested (must be done after creation).
+        # Only run when link succeeded — otherwise we'd be mutating an orphaned task.
+        # Map PBI states to valid Task states before applying.
         if [[ -n "$t_state" ]]; then t_state=$(map_task_state "$t_state"); fi
-        if [[ -n "$t_state" && "$t_state" != "To Do" ]]; then
-            local t_state_result
-            t_state_result=$(az boards work-item update --id "$t_id" --fields "System.State=$t_state" --output json 2>&1)
-            if [[ $? -ne 0 ]]; then
-                errors=$(printf '%s' "$errors" | jq --arg title "$t_title" --argjson id "$t_id" --arg err "$t_state_result" '. + [{"title": $title, "task_id": $id, "error": ("created but failed to set state: " + $err)}]')
-            fi
+        if [[ $link_ok -eq 1 && -n "$t_state" && "$t_state" != "To Do" ]]; then
+            az_capture az boards work-item update --id "$t_id" --fields "System.State=$t_state" --output json >/dev/null || {
+                errors=$(printf '%s' "$errors" | jq --arg title "$t_title" --argjson id "$t_id" --arg st "$t_state" '. + [{"title": $title, "task_id": $id, "error": ("created and linked but failed to set state to " + $st)}]')
+            }
         fi
 
         task_ids=$(printf '%s' "$task_ids" | jq --argjson id "$t_id" '. + [$id]')
