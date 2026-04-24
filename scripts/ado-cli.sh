@@ -141,10 +141,13 @@ json_error() {
 }
 
 # Run an az command, capturing stdout and stderr separately.
-# - On success: prints stdout. If stderr was non-empty, echoes a diagnostic on our
-#   stderr (non-fatal) so callers can audit warnings without corrupting JSON.
-# - On failure: prints a combined diagnostic (rc + stderr) on our stderr and returns
-#   the command's exit code. Caller should handle with `|| { ... }`.
+# - Stdout: always prints on success (empty on failure). Safe for callers to
+#   `result=$(az_capture ... 2>&1)` without JSON corruption.
+# - Stderr forwarding is OFF by default. Set ADO_CLI_VERBOSE=1 to forward
+#   captured az stderr (both on success and failure) to our own stderr for
+#   debugging/auditing. Without it, stderr is silent so callers that merge
+#   streams still receive clean JSON.
+# - On failure: returns the command's exit code. Caller handles with `|| { ... }`.
 # Usage: result=$(az_capture az boards work-item create ...) || return/exit
 az_capture() {
     local stderr_file stdout rc stderr
@@ -153,12 +156,15 @@ az_capture() {
     rc=$?
     stderr=$(<"$stderr_file")
     rm -f "$stderr_file"
-    if [[ $rc -ne 0 ]]; then
-        printf 'az command failed (rc=%d): %s\n' "$rc" "$stderr" >&2
-        return $rc
+    if [[ "${ADO_CLI_VERBOSE:-0}" == "1" && -n "$stderr" ]]; then
+        if [[ $rc -ne 0 ]]; then
+            printf 'az command failed (rc=%d): %s\n' "$rc" "$stderr" >&2
+        else
+            printf 'az stderr (non-fatal): %s\n' "$stderr" >&2
+        fi
     fi
-    if [[ -n "$stderr" ]]; then
-        printf 'az stderr (non-fatal): %s\n' "$stderr" >&2
+    if [[ $rc -ne 0 ]]; then
+        return $rc
     fi
     printf '%s' "$stdout"
 }
