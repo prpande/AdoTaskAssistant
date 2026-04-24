@@ -70,10 +70,18 @@ jq -n \
     {name:$s2_name, path:$s2_path, start:$s2_start, end:$s2_end}]' \
   > /tmp/ado-sprints.json
 
-# Enrich activity with sprint mapping, work type scoring, state, group hints
+# Read proposal_grouping.exclude_title_patterns from config (default: []).
+# Patterns applied here save tokens and keep routine work out of the proposal.
+jq '.proposal_grouping.exclude_title_patterns // []' data/config.json > /tmp/ado-exclude-patterns.json
+
+# Enrich activity with sprint mapping, work type scoring, state, group hints.
+# exclude_title_patterns is applied first — matching items are dropped before
+# anything else runs. The output includes .excluded_count so the propose step
+# can report what was filtered.
 bash scripts/build-params.sh --output /tmp/ado-preprocess-params.json \
   --arg activity_file "<path-to-activity-snapshot>" \
-  --slurp-file sprints /tmp/ado-sprints.json
+  --slurp-file sprints /tmp/ado-sprints.json \
+  --slurp-file exclude_title_patterns /tmp/ado-exclude-patterns.json
 bash scripts/preprocess-activity.sh --params-file /tmp/ado-preprocess-params.json > /tmp/ado-preprocessed.json
 
 # Step 3b: Build sprint paths array for dedup (also backslash-safe)
@@ -94,6 +102,7 @@ Verify both scripts succeeded (check `"success": true` in output). If either fai
 Execute `prompts/ado-tracker-propose-updates.prompt.md` with:
 - `preprocessed_file`: path to matched JSON from Step 3
 - `sprints`: sprint objects from Step 1
+- `excluded_count`: number of items dropped by `exclude_title_patterns` (from preprocess output) — mention this in the proposal summary if non-zero
 
 The prompt handles grouping, title writing, and user approval based on `approval_mode`.
 

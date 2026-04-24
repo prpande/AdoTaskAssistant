@@ -46,6 +46,9 @@ done
 ACTIVITY_FILE=$(printf '%s' "$PARAMS" | jq -r '.activity_file // empty')
 TEMPLATE_FILE=$(printf '%s' "$PARAMS" | jq -r '.template_file // empty')
 SPRINTS_JSON=$(printf '%s' "$PARAMS" | jq -c '.sprints // empty')
+# Optional: regex patterns (case-insensitive) to drop items from before processing.
+# See config_grouping.exclude_title_patterns in data/config.json.
+EXCLUDE_PATTERNS_JSON=$(printf '%s' "$PARAMS" | jq -c '.exclude_title_patterns // []')
 
 if [[ -z "$ACTIVITY_FILE" ]]; then
     json_error "Missing required parameter: activity_file"
@@ -83,6 +86,7 @@ fi
 printf '%s' "$ACTIVITY" | jq \
     --argjson sprints "$SPRINTS_JSON" \
     --argjson template "$TEMPLATE" \
+    --argjson exclude_patterns "$EXCLUDE_PATTERNS_JSON" \
 '
 # -------------------------------------------------------
 # Helper functions
@@ -176,14 +180,36 @@ def extract_branch:
         null
     end;
 
+# Return the effective title used for exclusion matching. For github_pr and
+# notion_page this is the source title; for dev_activity (which has no title)
+# we fall back to the repo name so patterns like "^Api\\.Codex$" still work.
+def match_text:
+    if .type == "github_pr" then (.title // "")
+    elif .type == "notion_page" then (.title // "")
+    elif .type == "dev_activity" then (.repo // "")
+    else (.title // "")
+    end;
+
+# True if the item matches any user-configured exclude pattern.
+# Patterns are case-insensitive. Invalid regex is treated as non-matching.
+def is_excluded:
+    . as $item |
+    ($exclude_patterns // []) as $pats |
+    ($pats | length) > 0 and
+    (any($pats[]; . as $pat | ($item | match_text | test($pat; "i"))));
+
 # -------------------------------------------------------
 # Main processing
 # -------------------------------------------------------
 
+. as $all |
+[ $all[] | select(is_excluded | not) ] as $kept |
+
 {
     success: true,
+    excluded_count: (($all | length) - ($kept | length)),
     items: [
-        .[] |
+        $kept[] |
         . as $item |
         ($item | primary_date) as $date |
         (find_sprint($date)) as $sprint |

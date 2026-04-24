@@ -5,7 +5,7 @@ Review pre-computed activity data, apply judgment for grouping and titles, and p
 
 ## Context
 - Template: `data/task-template.json` (read for title prefix, description format)
-- Config: `data/config.json` (read for `user.ado_email`, `scan.approval_mode`)
+- Config: `data/config.json` (read for `user.ado_email`, `scan.approval_mode`, `proposal_grouping.*`)
 
 ## Input
 - `preprocessed_file`: Path to JSON from preprocess + dedup pipeline. Each item has:
@@ -32,13 +32,16 @@ Use the script's inferences as starting points. Override when your judgment says
 
 For items with `"dedup.status": "new"`, group into proposed PBIs:
 
-1. **Branch prefix** — items sharing a `group_hint` across repos likely belong together
-2. **PR cross-references** — PR body or commits mentioning other repos/PRs
-3. **Notion page hierarchy** — pages sharing a parent or title pattern
-4. **Time proximity** — commits in the same repo on the same day
-5. **Single-item groups** — standalone items become their own PBI
+1. **Reviewer-only PRs** — read `proposal_grouping.consolidate_reviews_per_sprint` from config (default: `true`). When enabled, ALL items where `source.role == "reviewer"` are folded into a single `[<prefix>][Reviews] PR code reviews (<sprint>)` PBI per sprint, with one child task per reviewed PR. This applies only to pure reviewer items — `author+reviewer` items stay under their primary authorship PBI. When disabled, reviewed PRs are grouped like any other new item.
+2. **Branch prefix** — items sharing a `group_hint` across repos likely belong together
+3. **PR cross-references** — PR body or commits mentioning other repos/PRs
+4. **Notion page hierarchy** — pages sharing a parent or title pattern
+5. **Time proximity** — commits in the same repo on the same day
+6. **Single-item groups** — standalone items become their own PBI
 
 Each group becomes one proposed PBI with child tasks.
+
+**Note on title-pattern exclusions:** `proposal_grouping.exclude_title_patterns` is applied by `preprocess-activity.sh` *before* the proposal step — matching items never reach this prompt. You do not need to filter them here. The proposal summary should include a one-line note when the preprocess `excluded_count` is non-zero so the user knows recurring-work was dropped.
 
 ### Add tasks to existing PBIs
 
