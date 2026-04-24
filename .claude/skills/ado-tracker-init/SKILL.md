@@ -173,9 +173,15 @@ Build `data/config.json` from the answers and save it. Use this structure:
   "git": { "...": "..." },
   "schedule": {
     "daily_scan_time": "<HH:MM>"
+  },
+  "proposal_grouping": {
+    "consolidate_reviews_per_sprint": true,
+    "exclude_title_patterns": []
   }
 }
 ```
+
+The `proposal_grouping` block ships with sensible defaults and does not need to be prompted during initial setup — the user can edit it later to tune how scans are grouped and filtered. Mention it briefly in the summary: "Review PRs will be grouped into a single PBI per sprint by default. Add regex patterns to `proposal_grouping.exclude_title_patterns` if you want to drop routine work (e.g., daily automated sweeps) from future proposals."
 
 Present a summary for confirmation.
 

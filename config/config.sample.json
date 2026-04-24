@@ -32,5 +32,9 @@
   "scan": {
     "approval_mode": "interactive",
     "auto_apply_sources": []
+  },
+  "proposal_grouping": {
+    "consolidate_reviews_per_sprint": true,
+    "exclude_title_patterns": []
   }
 }

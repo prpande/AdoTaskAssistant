@@ -55,3 +55,13 @@ See `config/config.sample.json` for a working example with all fields.
 |-------|------|---------|-------------|
 | `approval_mode` | `"interactive"` \| `"auto-confirm"` \| `"auto-apply"` | `"interactive"` | How scan proposals are approved. `interactive`: show and wait. `auto-confirm`: show then proceed immediately. `auto-apply`: apply without showing. |
 | `auto_apply_sources` | string[] | `[]` | Reserved for future per-source auto-apply rules. |
+
+### `proposal_grouping`
+Controls how activity is filtered and grouped before being presented for approval.
+These options save tokens and reduce noise for recurring-work scenarios (daily sweeps,
+review-heavy sprints) without requiring the user to redirect every run.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `consolidate_reviews_per_sprint` | boolean | `true` | When `true`, reviewer-only PRs (role=`reviewer`) are folded into a single `[<prefix>][Reviews]` PBI per sprint, with one child task per reviewed PR. When `false`, each reviewed PR gets its own PBI. |
+| `exclude_title_patterns` | string[] | `[]` | Regex patterns (case-insensitive). Any activity item whose title matches any pattern is dropped during preprocessing, before dedup and proposal. Useful for routine work like `"daily .* (sweep\|codex)"` or `"\\\\[PARTIAL\\\\] nightly:"`. Patterns are applied to `source.title` for PRs/Notion pages and to the repo name for `dev_activity` items without a title. |
